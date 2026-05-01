@@ -7,9 +7,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/pg";
 import { SignJWT, jwtVerify } from "jose";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || process.env.DEEPSEEK_API_KEY || "script-kill-local-dev"
-);
+const JWT_SECRET_RAW = process.env.JWT_SECRET || process.env.DEEPSEEK_API_KEY || "";
+if (!JWT_SECRET_RAW) {
+  console.warn("⚠️ JWT_SECRET 和 DEEPSEEK_API_KEY 都未设置，将使用不安全的后备密钥。生产环境请设置 JWT_SECRET。");
+}
+const JWT_SECRET = new TextEncoder().encode(JWT_SECRET_RAW || "script-kill-local-dev");
 const SESSION_EXPIRY_DAYS = 7;
 
 export const dynamic = "force-dynamic";

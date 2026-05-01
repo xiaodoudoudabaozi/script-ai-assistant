@@ -33,18 +33,21 @@ def parse_pdf(content: bytes, ocr_threshold: int = 50) -> str:
     """
     import fitz
     doc = fitz.open(stream=content, filetype="pdf")
-    text_parts = []
-    for page in doc:
-        t = page.get_text("text")
-        if t.strip():
-            text_parts.append(t.strip())
-    text = "\n\n".join(text_parts)
+    try:
+        text_parts = []
+        for page in doc:
+            t = page.get_text("text")
+            if t.strip():
+                text_parts.append(t.strip())
+        text = "\n\n".join(text_parts)
 
-    if len(text.strip()) >= ocr_threshold:
-        return text
+        if len(text.strip()) >= ocr_threshold:
+            return text
 
-    # 嵌入文字太少，视为扫描版，逐页 OCR
-    return _parse_pdf_ocr(content)
+        # 嵌入文字太少，视为扫描版，逐页 OCR
+        return _parse_pdf_ocr(content)
+    finally:
+        doc.close()
 
 
 def _parse_pdf_ocr(content: bytes) -> str:
@@ -54,22 +57,25 @@ def _parse_pdf_ocr(content: bytes) -> str:
     import numpy as np
 
     doc = fitz.open(stream=content, filetype="pdf")
-    ocr = _get_ocr()
-    all_lines = []
+    try:
+        ocr = _get_ocr()
+        all_lines = []
 
-    print(f"扫描版PDF，共 {len(doc)} 页，开始OCR...")
-    for page_num, page in enumerate(doc):
-        print(f"  OCR第 {page_num + 1}/{len(doc)} 页...")
-        pix = page.get_pixmap(dpi=150)
-        img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
-        result, _ = ocr(np.array(img))
-        if result:
-            for line in result:
-                text = line[1]
-                if text and text.strip():
-                    all_lines.append(text.strip())
+        print(f"扫描版PDF，共 {len(doc)} 页，开始OCR...")
+        for page_num, page in enumerate(doc):
+            print(f"  OCR第 {page_num + 1}/{len(doc)} 页...")
+            pix = page.get_pixmap(dpi=150)
+            img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            result, _ = ocr(np.array(img))
+            if result:
+                for line in result:
+                    text = line[1]
+                    if text and text.strip():
+                        all_lines.append(text.strip())
 
-    return "\n".join(all_lines)
+        return "\n".join(all_lines)
+    finally:
+        doc.close()
 
 
 def parse_image(content: bytes) -> str:

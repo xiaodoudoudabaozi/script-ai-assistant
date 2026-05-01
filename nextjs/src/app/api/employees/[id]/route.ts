@@ -8,7 +8,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = getUserFromRequest(request);
+    const user = getUser(request);
     if (!user) {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }
@@ -40,7 +40,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = getUserFromRequest(request);
+    const user = getUser(request);
     if (!user) {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }
@@ -110,7 +110,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = getUserFromRequest(request);
+    const user = getUser(request);
     if (!user) {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }

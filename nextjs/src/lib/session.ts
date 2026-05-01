@@ -9,9 +9,19 @@ export interface Message {
 }
 
 const MAX_HISTORY = 10; // 保留最近 10 轮
+const MAX_CACHED_CONVERSATIONS = 200; // 最多缓存200个对话
 
 // 内存缓存：key = conversationId
 const memoryCache = new Map<string, Message[]>();
+
+async function setCache(key: string, value: Message[]) {
+  if (memoryCache.size >= MAX_CACHED_CONVERSATIONS) {
+    // 删最旧的（Map迭代顺序=插入顺序）
+    const first = memoryCache.keys().next().value;
+    if (first) memoryCache.delete(first);
+  }
+  setCache(key, value);
+}
 
 async function getActiveModel(): Promise<string> {
   try {
@@ -81,7 +91,7 @@ export async function getHistory(conversationId: string): Promise<Message[]> {
     );
     const history: Message[] = result.rows.map((r: any) => ({ role: r.role, content: r.content }));
     if (history.length > 0) {
-      memoryCache.set(conversationId, history.slice(-MAX_HISTORY * 2));
+      setCache(conversationId, history.slice(-MAX_HISTORY * 2));
     }
     return history;
   } catch {
@@ -103,7 +113,7 @@ export async function appendMessage(
   if (history.length > MAX_HISTORY * 2) {
     history = history.slice(-MAX_HISTORY * 2);
   }
-  memoryCache.set(conversationId, history);
+  setCache(conversationId, history);
 
   // 异步写入数据库
   const sessionId = `conv_${conversationId}`;
@@ -165,7 +175,7 @@ export async function compressHistory(conversationId: string, history: Message[]
       { role: "system", content: `【历史对话摘要】\n${compressedSummary}` },
       ...recentHistory,
     ];
-    memoryCache.set(conversationId, recentHistory);
+    setCache(conversationId, recentHistory);
     return compressed;
   }
 

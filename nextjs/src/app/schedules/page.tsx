@@ -64,7 +64,7 @@ export default function SchedulesPage() {
   useEffect(() => {
     const userData = localStorage.getItem("user");
     if (!userData) { router.push("/"); return; }
-    const u = JSON.parse(userData);
+    let u; try { u = JSON.parse(userData); } catch { return; }
     setUser(u);
   }, []);
 

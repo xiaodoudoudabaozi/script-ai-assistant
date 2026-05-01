@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/pg";
 import { deleteFileCache } from "@/lib/cache";
+import { getUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,11 @@ export async function DELETE(
   { params }: { params: Promise<{ fileId: string }> }
 ) {
   try {
+    const user = getUser(request);
+    if (!user || user.role !== "admin") {
+      return NextResponse.json({ error: "无权限" }, { status: 403 });
+    }
+
     const { fileId } = await params;
 
     // 查找文件所属剧本

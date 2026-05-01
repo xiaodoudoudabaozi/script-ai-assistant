@@ -75,7 +75,7 @@ export default function AdaptationsPage() {
   useEffect(() => {
     const userData = localStorage.getItem("user");
     if (!userData) { router.push("/"); return; }
-    const u = JSON.parse(userData);
+    let u; try { u = JSON.parse(userData); } catch { router.push("/"); return; }
     if (u.role !== "admin") { router.push("/"); return; }
     fetchScripts();
     fetchAdaptations();

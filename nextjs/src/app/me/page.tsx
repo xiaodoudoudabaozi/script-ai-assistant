@@ -27,7 +27,7 @@ export default function MePage() {
       router.push("/");
       return;
     }
-    const u = JSON.parse(userData);
+    let u; try { u = JSON.parse(userData); } catch { return; }
     setUser(u);
     setForm({ name: u.name, phone: u.phone || "", position: u.position || "", password: "" });
     setLoading(false);
@@ -39,7 +39,7 @@ export default function MePage() {
       if (document.visibilityState === "visible") {
         const userData = localStorage.getItem("user");
         if (userData) {
-          const u = JSON.parse(userData);
+          let u; try { u = JSON.parse(userData); } catch { return; }
           setUser(u);
           if (!editing) setForm({ name: u.name, phone: u.phone || "", position: u.position || "", password: "" });
         }

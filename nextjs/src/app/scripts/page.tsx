@@ -82,7 +82,7 @@ export default function ScriptsPage() {
   useEffect(() => {
     const userData = localStorage.getItem("user");
     if (!userData) { router.push("/"); return; }
-    const u = JSON.parse(userData);
+    let u; try { u = JSON.parse(userData); } catch { router.push("/"); return; }
     setIsAdmin(u.role === "admin");
     fetchScripts();
   }, []);

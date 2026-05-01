@@ -31,7 +31,7 @@ export default function EmployeesPage() {
       router.push("/");
       return;
     }
-    const user = JSON.parse(userData);
+    let user; try { user = JSON.parse(userData); } catch { router.push("/"); return; }
     if (user.role !== "admin") {
       router.push("/");
       return;
