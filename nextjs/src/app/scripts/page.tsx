@@ -64,6 +64,7 @@ export default function ScriptsPage() {
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<Set<string>>(new Set());
   const [isAdmin, setIsAdmin] = useState(false);
+  const [parseStatuses, setParseStatuses] = useState<Record<string, { total: number; parsed: number; pending: number }>>({});
   const router = useRouter();
 
   // 批量上传
@@ -91,6 +92,35 @@ export default function ScriptsPage() {
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [keyword]);
+
+  // 轮询解析进度
+  useEffect(() => {
+    if (scripts.length === 0) return;
+    let active = true;
+    const poll = () => {
+      if (!active) return;
+      Promise.all(
+        scripts.map(s =>
+          fetch(`/api/scripts/parse-status?scriptId=${s.id}`)
+            .then(r => r.json())
+            .then(d => ({ id: s.id, ...d }))
+            .catch(() => null)
+        )
+      ).then(results => {
+        if (!active) return;
+        const map: Record<string, any> = {};
+        for (const r of results) {
+          if (r) map[r.id] = { total: r.total, parsed: r.parsed, pending: r.pending };
+        }
+        setParseStatuses(map);
+        // 有未完成的继续轮询
+        const hasPending = results.some(r => r && r.pending > 0);
+        if (hasPending) setTimeout(poll, 5000);
+      });
+    };
+    poll();
+    return () => { active = false; };
+  }, [scripts]);
 
   async function fetchScripts(kw?: string) {
     try {
@@ -423,6 +453,14 @@ export default function ScriptsPage() {
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-lg">{s.name}</span>
+                  {parseStatuses[s.id] && parseStatuses[s.id].pending > 0 && (
+                    <span className="px-2 py-0.5 text-xs bg-yellow-100 text-yellow-700 rounded font-medium animate-pulse">
+                      {parseStatuses[s.id].parsed}/{parseStatuses[s.id].total} 已解析
+                    </span>
+                  )}
+                  {parseStatuses[s.id] && parseStatuses[s.id].pending === 0 && parseStatuses[s.id].total > 0 && (
+                    <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded font-medium">✓ 全部就绪</span>
+                  )}
                   {s.is_sensitive && <span className="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded">敏感本</span>}
                 </div>
                 <div className="flex flex-wrap gap-2 mt-2 text-sm text-gray-500">
