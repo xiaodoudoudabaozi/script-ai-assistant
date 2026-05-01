@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS conversations (
 CREATE TABLE IF NOT EXISTS chat_history (
     id              SERIAL PRIMARY KEY,
     session_id      VARCHAR(100) NOT NULL,
-    script_id       VARCHAR(100) NOT NULL,
+    script_id       UUID NOT NULL REFERENCES scripts(id) ON DELETE CASCADE,
     conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
     role            VARCHAR(20) NOT NULL,
     content         TEXT NOT NULL,
