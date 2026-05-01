@@ -334,7 +334,7 @@ export default function Home() {
   const genres = [...new Set(scripts.map((s: any) => s.genre).filter(Boolean))];
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
+    <div className="flex flex-col h-screen bg-gray-50">
       {/* 顶部栏：选择剧本 | 搜索 | 新对话 */}
       <header className="flex items-center gap-2 px-3 py-2 bg-white border-b shadow-sm z-30">
         <h1 className="text-base font-bold whitespace-nowrap hidden sm:block">AI助手</h1>
