@@ -39,8 +39,11 @@ export default function Home() {
     if (u) try { setUser(JSON.parse(u)); } catch {}
   }, []);
 
-  // 加载剧本
-  useEffect(() => { fetch("/api/scripts/list").then(r => r.json()).then(d => setScripts(d.scripts || [])).catch(() => setError("加载剧本列表失败")).finally(() => setScriptsLoading(false)); }, []);
+  // 加载剧本（登录后才请求）
+  useEffect(() => {
+    if (!localStorage.getItem("token") && !localStorage.getItem("user")) { setScriptsLoading(false); return; }
+    fetch("/api/scripts/list").then(r => r.json()).then(d => setScripts(d.scripts || [])).catch(() => {}).finally(() => setScriptsLoading(false));
+  }, []);
 
   // 自动滚动
   useEffect(() => { msgEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
