@@ -131,7 +131,7 @@ export async function DELETE(req: NextRequest) {
       await pool.query(
         `INSERT INTO operation_logs (user_id, action, detail, created_at) VALUES ($1, 'logout', '员工登出', NOW())`,
         [payload.userId]
-      ).catch(() => {});
+      ).catch(err => console.warn("[auth] 登出日志失败:", err.message));
     } catch {}
   }
 

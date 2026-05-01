@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
           `UPDATE adaptation_logs SET output_file_path = $1 WHERE id = $2`,
           [`exports/${script_name || "unknown"}_adapted.docx`, adaptation_id]
         )
-        .catch(() => {});
+        .catch(err => console.warn("[export] 日志更新失败:", err.message));
     }
 
     return new NextResponse(buffer, {

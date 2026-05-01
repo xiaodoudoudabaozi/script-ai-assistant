@@ -291,7 +291,7 @@ export async function POST(req: NextRequest) {
                ON CONFLICT (script_id, question_hash, character_name) DO UPDATE
                SET answer = $4, created_at = NOW()`,
               [scriptId, questionHash, message.trim(), fullAssistantMsg, cacheKey]
-            ).catch(() => {});
+            ).catch(err => console.warn("[qa_cache] 写入失败:", err.message));
           }
           if (finishReason === "length") {
             controller.enqueue(

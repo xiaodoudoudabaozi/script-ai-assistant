@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     await pool.query(
       `INSERT INTO operation_logs (user_id, action, detail, created_at) VALUES ($1, 'employee_created', $2, NOW())`,
       [user.id, `新增员工: ${name}`]
-    ).catch(() => {});
+    ).catch(err => console.warn("[employees] 日志记录失败:", err.message));
 
     return NextResponse.json({ employee: result.rows[0] }, { status: 201 });
   } catch (error) {

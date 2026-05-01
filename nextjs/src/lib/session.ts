@@ -74,7 +74,7 @@ export async function deleteConversation(conversationId: string) {
 }
 
 export async function touchConversation(conversationId: string) {
-  await pool.query("UPDATE conversations SET updated_at = NOW() WHERE id = $1", [conversationId]).catch(() => {});
+  pool.query("UPDATE conversations SET updated_at = NOW() WHERE id = $1", [conversationId]).catch(err => console.warn("[session] touch失败:", err.message));
 }
 
 // ── 对话历史 ──
@@ -185,5 +185,5 @@ export async function compressHistory(conversationId: string, history: Message[]
 /** 清除对话历史 */
 export async function clearHistory(conversationId: string): Promise<void> {
   memoryCache.delete(conversationId);
-  await pool.query("DELETE FROM chat_history WHERE conversation_id = $1", [conversationId]).catch(() => {});
+  pool.query("DELETE FROM chat_history WHERE conversation_id = $1", [conversationId]).catch(err => console.warn("[session] clearHistory失败:", err.message));
 }
