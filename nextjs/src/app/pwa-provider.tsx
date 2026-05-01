@@ -4,42 +4,39 @@ import { useEffect } from "react";
 
 /**
  * PWA 注册 + 网络断连检测 + 30分钟无操作自动登出
- * 规格文档 4.5.1 / 4.4 节
+ * v2.2: 启用 Service Worker（网络优先策略）
  */
 export function PwaProvider() {
   useEffect(() => {
-    // ── 清理所有已注册的 SW（v1 稳定性优先，待 v2 重写） ──
+    // ── 注册 Service Worker ──
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.getRegistrations().then((regs) => {
-        regs.forEach((r) => r.unregister());
-      });
-    }
-
-    // ── SW 暂时禁用 ──
-    if (false && "serviceWorker" in navigator) {
       navigator.serviceWorker
         .register("/sw.js")
         .then((reg) => {
-          // 检测到新版本 SW 时自动更新
+          console.log("[PWA] SW 已注册:", reg.scope);
+
+          // 检测到新版本时自动更新
           reg.addEventListener("updatefound", () => {
             const newWorker = reg.installing;
-            if (newWorker) {
-              newWorker.addEventListener("statechange", () => {
-                if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-                  // 新 SW 已安装，通知用户刷新
-                  newWorker.postMessage({ type: "SKIP_WAITING" });
-                  window.location.reload();
-                }
-              });
-            }
+            if (!newWorker) return;
+            newWorker.addEventListener("statechange", () => {
+              if (
+                newWorker.state === "installed" &&
+                navigator.serviceWorker.controller
+              ) {
+                console.log("[PWA] 新版本已就绪，即将刷新...");
+                newWorker.postMessage({ type: "SKIP_WAITING" });
+                window.location.reload();
+              }
+            });
           });
         })
-        .catch(() => {
-          // 静默失败，SW 是渐进增强
+        .catch((err) => {
+          console.warn("[PWA] SW 注册失败（非致命）:", err.message);
         });
     }
 
-    // ── 网络断连检测（规格文档4.4节） ──
+    // ── 网络断连检测 ──
     let offlineToast: HTMLDivElement | null = null;
 
     function showOffline() {
@@ -63,7 +60,7 @@ export function PwaProvider() {
 
     if (!navigator.onLine) showOffline();
 
-    // ── 30分钟无操作自动登出（规格文档4.5.5节） ──
+    // ── 30分钟无操作自动登出 ──
     let lastActivity = Date.now();
     const updateActivity = () => {
       lastActivity = Date.now();
@@ -75,7 +72,6 @@ export function PwaProvider() {
       if (Date.now() - lastActivity > 30 * 60 * 1000) {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
-        // 清除 cookie
         document.cookie =
           "session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
         window.location.reload();
