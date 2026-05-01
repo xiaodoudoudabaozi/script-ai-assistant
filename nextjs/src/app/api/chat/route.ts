@@ -96,8 +96,54 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // ---------- 3. QA缓存检查 ----------
+  const crypto = await import("crypto");
+  const questionHash = crypto.createHash("md5").update(message.trim()).digest("hex");
+  const cacheKey = characterName || "";
+
+  // 仅对首条问题（无历史）做缓存，有上下文的不缓存
+  const historyForCheck = await getHistory(conversationId);
+  if (historyForCheck.length === 0) {
+    try {
+      const cacheResult = await pool.query(
+        `SELECT answer FROM qa_cache
+         WHERE script_id = $1::uuid AND question_hash = $2 AND character_name = $3
+           AND created_at > NOW() - INTERVAL '24 hours'
+         LIMIT 1`,
+        [scriptId, questionHash, cacheKey]
+      );
+      if (cacheResult.rows.length > 0) {
+        // 命中缓存，直接返回（SSE格式）
+        const cachedAnswer = cacheResult.rows[0].answer;
+        await pool.query(
+          `UPDATE qa_cache SET hit_count = hit_count + 1 WHERE script_id = $1::uuid AND question_hash = $2 AND character_name = $3`,
+          [scriptId, questionHash, cacheKey]
+        ).catch(() => {});
+
+        const cacheStream = new ReadableStream({
+          start(controller) {
+            const encoder = new TextEncoder();
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: cachedAnswer })}\n\n`));
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          },
+        });
+
+        // 记录到对话历史
+        appendMessage(conversationId, scriptId, message.trim(), cachedAnswer);
+        if (conv.title === "新对话") {
+          updateConversationTitle(conversationId, message.trim().slice(0, 50));
+        }
+
+        return new Response(cacheStream, {
+          headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no", "X-QA-Cache": "hit" },
+        });
+      }
+    } catch (e) { /* 缓存检查失败不影响正常流程 */ }
+  }
+
   // ---------- 4. 对话历史 + 压缩 ----------
-  let history = await getHistory(conversationId);
+  let history = historyForCheck;
 
   // 超过10轮时压缩旧历史（规格文档3.3节）
   if (history.length > 20) {
@@ -195,6 +241,16 @@ export async function POST(req: NextRequest) {
                   const title = message.trim().slice(0, 50);
                   updateConversationTitle(conversationId, title);
                 }
+                // 缓存首条问答（无历史、未截断）
+                if (history.length === 0 && finishReason !== "length") {
+                  pool.query(
+                    `INSERT INTO qa_cache (script_id, question_hash, question, answer, character_name)
+                     VALUES ($1::uuid, $2, $3, $4, $5)
+                     ON CONFLICT (script_id, question_hash, character_name) DO UPDATE
+                     SET answer = $4, created_at = NOW()`,
+                    [scriptId, questionHash, message.trim(), fullAssistantMsg, cacheKey]
+                  ).catch(() => {});
+                }
               }
               // 截断检测（规格文档4.2.3节）
               if (finishReason === "length") {
@@ -227,6 +283,15 @@ export async function POST(req: NextRequest) {
           appendMessage(conversationId, scriptId, message.trim(), fullAssistantMsg);
           if (conv.title === "新对话") {
             updateConversationTitle(conversationId, message.trim().slice(0, 50));
+          }
+          if (history.length === 0 && finishReason !== "length") {
+            pool.query(
+              `INSERT INTO qa_cache (script_id, question_hash, question, answer, character_name)
+               VALUES ($1::uuid, $2, $3, $4, $5)
+               ON CONFLICT (script_id, question_hash, character_name) DO UPDATE
+               SET answer = $4, created_at = NOW()`,
+              [scriptId, questionHash, message.trim(), fullAssistantMsg, cacheKey]
+            ).catch(() => {});
           }
           if (finishReason === "length") {
             controller.enqueue(

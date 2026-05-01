@@ -296,6 +296,11 @@ export async function POST(req: NextRequest) {
     const dedupCount = results.filter(r => r.deduped).length;
     const failCount = results.filter(r => r.status === "error").length;
 
+    // 清除 QA 缓存
+    if (successCount > 0) {
+      pool.query("DELETE FROM qa_cache WHERE script_id = $1::uuid", [scriptId]).catch(() => {});
+    }
+
     // ---------- 5. 返回结果 ----------
     let summary = `${successCount} 个文件上传成功`;
     if (dedupCount > 0) summary += `（${dedupCount} 个内容重复已合并）`;

@@ -119,11 +119,25 @@ CREATE TABLE IF NOT EXISTS script_files (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- 问答缓存表（高频问答缓存，24h过期）
+CREATE TABLE IF NOT EXISTS qa_cache (
+    id              SERIAL PRIMARY KEY,
+    script_id       UUID NOT NULL REFERENCES scripts(id) ON DELETE CASCADE,
+    question_hash   VARCHAR(64) NOT NULL,
+    question        TEXT NOT NULL,
+    answer          TEXT NOT NULL,
+    character_name  VARCHAR(100) DEFAULT '',
+    hit_count       INT DEFAULT 1,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(script_id, question_hash, character_name)
+);
+
 -- =====================================================
 -- 索引
 -- =====================================================
 CREATE INDEX IF NOT EXISTS idx_chat_session         ON chat_history(session_id, script_id);
 CREATE INDEX IF NOT EXISTS idx_chat_conversation    ON chat_history(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_qa_cache_lookup       ON qa_cache(script_id, question_hash, character_name);
 CREATE INDEX IF NOT EXISTS idx_conversations_user    ON conversations(user_id, script_id);
 CREATE INDEX IF NOT EXISTS idx_schedules_employee ON schedules(employee_id);
 CREATE INDEX IF NOT EXISTS idx_schedules_date     ON schedules(date);
