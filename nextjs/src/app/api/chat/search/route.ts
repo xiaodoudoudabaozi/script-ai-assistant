@@ -9,6 +9,21 @@ import { pool } from "@/lib/pg";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function makeSnippet(content: string, keyword: string, maxLen = 80): string {
+  const lower = content.toLowerCase();
+  const kw = keyword.toLowerCase();
+  const idx = lower.indexOf(kw);
+  if (idx === -1) return content.slice(0, maxLen) + (content.length > maxLen ? "..." : "");
+
+  const start = Math.max(0, idx - 30);
+  const end = Math.min(content.length, idx + kw.length + 30);
+  let snippet = (start > 0 ? "..." : "") + content.slice(start, end) + (end < content.length ? "..." : "");
+  // 高亮关键词
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  snippet = snippet.replace(new RegExp(escaped, 'gi'), '<mark>$&</mark>');
+  return snippet;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -19,12 +34,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ results: [] });
     }
 
+    // 用 ILIKE 替代 to_tsvector，支持中文
+    const likePattern = `%${q}%`;
+
     let query = `
       SELECT
         ch.id,
         ch.role,
-        ts_headline('simple', ch.content, plainto_tsquery('simple', $1),
-          'MaxWords=30, MinWords=10, ShortWord=2, StartSel=<mark>, StopSel=</mark>') AS snippet,
+        ch.content,
         ch.conversation_id,
         ch.created_at,
         c.title AS conversation_title,
@@ -34,9 +51,9 @@ export async function GET(request: NextRequest) {
       JOIN conversations c ON ch.conversation_id = c.id
       JOIN scripts s ON c.script_id = s.id
       WHERE ch.role = 'user'
-        AND to_tsvector('simple', ch.content) @@ plainto_tsquery('simple', $1)
+        AND ch.content ILIKE $1
     `;
-    const params: any[] = [q];
+    const params: any[] = [likePattern];
     let idx = 2;
 
     if (scriptId) {
@@ -56,7 +73,7 @@ export async function GET(request: NextRequest) {
     const results = result.rows.map((row: any) => ({
       id: row.id,
       role: row.role,
-      snippet: row.snippet,
+      snippet: makeSnippet(row.content, q),
       conversationId: row.conversation_id,
       conversationTitle: row.conversation_title,
       scriptId: row.script_id,
