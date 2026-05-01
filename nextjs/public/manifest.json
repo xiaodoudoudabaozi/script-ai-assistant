@@ -1,0 +1,17 @@
+{
+  "name": "剧本杀AI店员助手",
+  "short_name": "AI店员助手",
+  "description": "剧本杀店铺内部AI知识助手 - 剧本问答、改编工坊、排班查询",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f9fafb",
+  "theme_color": "#2563eb",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    }
+  ]
+}

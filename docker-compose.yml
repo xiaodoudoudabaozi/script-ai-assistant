@@ -1,0 +1,62 @@
+services:
+  # ── Next.js 前端 + API Routes ──
+  nextjs:
+    build:
+      context: ./nextjs
+      dockerfile: Dockerfile
+    ports:
+      - "3009:3000"
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-your_deepseek_api_key_here}
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=postgres
+      - DATABASE_PASSWORD=postgres
+      - DATABASE_NAME=scriptstore
+      - NEXT_PUBLIC_API_URL=http://fastapi-ai:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./nextjs:/app
+      - /app/node_modules
+      - script-data:/data/scripts
+    command: npm run dev
+
+  # ── PostgreSQL 16 ──
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: scriptstore
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI AI 解析服务 ──
+  fastapi-ai:
+    build:
+      context: ./fastapi-ai
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - FLAGS_use_mkldnn=0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./fastapi-ai:/app
+      - script-data:/data/scripts
+
+volumes:
+  pgdata:
+  script-data:

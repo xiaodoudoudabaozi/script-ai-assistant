@@ -1,0 +1,422 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+
+interface Script {
+  id: string;
+  name: string;
+}
+
+interface Adaptation {
+  id: string;
+  script_id: string;
+  script_name?: string;
+  operator_name?: string;
+  adaptation_type: string;
+  instruction: string;
+  changes_summary: string;
+  created_at: string;
+}
+
+// 规格文档4.2.2节：4种改编类型
+const ADAPT_TYPES = [
+  { value: "element_replacement", label: "🔄 元素替换 — 改具体细节，保持结构（刀杀→毒杀、民国→现代）" },
+  { value: "plot_tweak", label: "📖 剧情微调 — 改逻辑衔接，不改结构（冲突提前、线索位移）" },
+  { value: "perspective_expand", label: "👁 视角扩展 — 以另一角色视角重写" },
+  { value: "manual_adapt", label: "📝 手册改编 — 改DM手册措辞/格式" },
+];
+
+const ADAPT_TYPE_LABELS: Record<string, string> = {
+  element_replacement: "元素替换",
+  plot_tweak: "剧情微调",
+  perspective_expand: "视角扩展",
+  manual_adapt: "手册改编",
+};
+
+export default function AdaptationsPage() {
+  const [scripts, setScripts] = useState<Script[]>([]);
+  const [adaptations, setAdaptations] = useState<Adaptation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [form, setForm] = useState({
+    script_id: "",
+    adaptation_type: "element_replacement",
+    instruction: "",
+  });
+  const [result, setResult] = useState<{
+    content: string;
+    script_name: string;
+    is_truncated?: boolean;
+    truncation_warning?: string | null;
+    adaptation_id?: string;
+  } | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [showComparison, setShowComparison] = useState(false);
+  const [originalText, setOriginalText] = useState<string | null>(null);
+  const [loadingOriginal, setLoadingOriginal] = useState(false);
+  const [preview, setPreview] = useState<{
+    preview: string;
+    need_confirm: boolean;
+    confirm_message: string;
+    script_name: string;
+  } | null>(null);
+  const [error, setError] = useState("");
+  const router = useRouter();
+
+  useEffect(() => {
+    const userData = localStorage.getItem("user");
+    if (!userData) { router.push("/"); return; }
+    const u = JSON.parse(userData);
+    if (u.role !== "admin") { router.push("/"); return; }
+    fetchScripts();
+    fetchAdaptations();
+  }, []);
+
+  async function fetchScripts() {
+    try {
+      const userData = localStorage.getItem("user");
+      const resp = await fetch("/api/scripts/meta", { headers: { "x-user-data": userData || "" } });
+      const data = await resp.json();
+      if (resp.ok) setScripts(data.scripts || []);
+      else setError(data.error || "加载剧本列表失败");
+    } catch { setError("加载剧本列表失败"); }
+  }
+
+  async function fetchAdaptations() {
+    try {
+      const userData = localStorage.getItem("user");
+      const resp = await fetch("/api/adaptations", { headers: { "x-user-data": userData || "" } });
+      const data = await resp.json();
+      if (resp.ok) setAdaptations(data.adaptations || []);
+    } catch { /* ignore - 历史加载失败不阻塞页面 */ }
+    finally { setLoading(false); }
+  }
+
+  // 页面可见时刷新
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === "visible") { fetchScripts(); fetchAdaptations(); } };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+
+  // Step 1: 生成改编方案预览
+  async function handlePreview(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.script_id || !form.instruction) {
+      setError("请选择剧本并填写改编指令");
+      return;
+    }
+    setError("");
+    setGenerating(true);
+    setResult(null);
+    setPreview(null);
+
+    try {
+      const userData = localStorage.getItem("user");
+      const resp = await fetch("/api/adaptations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-user-data": userData || "" },
+        body: JSON.stringify({ ...form, step: "preview" }),
+      });
+      const data = await resp.json();
+
+      if (data.need_sensitive_confirm) {
+        setError("⚠️ 该剧本已标记为敏感本，改编需谨慎。请再次点击确认继续。");
+        setGenerating(false);
+        return;
+      }
+
+      if (data.level === "prohibited") {
+        setError(`🚫 ${data.error}`);
+        setGenerating(false);
+        return;
+      }
+
+      if (!resp.ok) {
+        setError(data.error || "预览失败");
+        setGenerating(false);
+        return;
+      }
+
+      setPreview({
+        preview: data.preview,
+        need_confirm: data.need_confirm || false,
+        confirm_message: data.confirm_message || "",
+        script_name: data.script_name,
+      });
+    } catch {
+      setError("网络错误");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  // Step 2: 确认后生成全本
+  async function handleGenerate() {
+    if (!preview) return;
+    setError("");
+    setGenerating(true);
+    setPreview(null);
+
+    try {
+      const userData = localStorage.getItem("user");
+      const resp = await fetch("/api/adaptations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-user-data": userData || "" },
+        body: JSON.stringify({ ...form, step: "generate" }),
+      });
+      const data = await resp.json();
+      if (resp.ok || resp.status === 201) {
+        setResult({
+          content: data.content,
+          script_name: data.script_name,
+          is_truncated: data.is_truncated,
+          truncation_warning: data.truncation_warning,
+          adaptation_id: data.adaptation?.id,
+        });
+        fetchAdaptations();
+      } else {
+        setError(data.error || "改编失败");
+      }
+    } catch {
+      setError("网络错误");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  // 并排对比（规格文档4.2.3节步骤⑤）
+  async function toggleComparison() {
+    if (showComparison) {
+      setShowComparison(false);
+      return;
+    }
+    if (!result) return;
+    if (!originalText) {
+      setLoadingOriginal(true);
+      try {
+        const userData = localStorage.getItem("user");
+        const resp = await fetch(`/api/scripts/meta?script_id=${form.script_id}`, {
+          headers: { "x-user-data": userData || "" },
+        });
+        const data = await resp.json();
+        if (data.scripts?.[0]) {
+          const cacheResp = await fetch(`/api/scripts/cache?id=${form.script_id}`, {
+            headers: { "x-user-data": userData || "" },
+          });
+          if (cacheResp.ok) {
+            const cacheData = await cacheResp.json();
+            setOriginalText(cacheData.text || "（原始剧本文本不可用）");
+          } else {
+            setOriginalText("（无法加载原始文本）");
+          }
+        } else {
+          setOriginalText("（剧本不存在）");
+        }
+      } catch {
+        setOriginalText("（加载原始文本失败）");
+      } finally {
+        setLoadingOriginal(false);
+      }
+    }
+    setShowComparison(true);
+  }
+
+  // 导出 DOCX（规格文档4.2.3节步骤⑦）
+  async function handleExport() {
+    if (!result) return;
+    setExporting(true);
+    try {
+      const userData = localStorage.getItem("user");
+      const resp = await fetch("/api/adaptations/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-user-data": userData || "" },
+        body: JSON.stringify({
+          content: result.content,
+          script_name: result.script_name,
+          adaptation_id: result.adaptation_id,
+        }),
+      });
+      if (!resp.ok) {
+        const data = await resp.json();
+        setError(data.error || "导出失败");
+        return;
+      }
+      // 触发浏览器下载
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${result.script_name || "adapted"}_改编版.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("导出失败");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  if (loading) return <div className="p-4">加载中...</div>;
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-4">
+      <div className="max-w-4xl mx-auto">
+        <a href="/" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-blue-600 mb-3">← 返回大厅</a>
+        <h1 className="text-xl font-bold mb-6">🎭 改编工坊</h1>
+
+        {/* 改编表单 */}
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <h2 className="text-lg font-bold mb-4">新建改编</h2>
+          {error && <div className="mb-3 p-2 bg-red-50 text-red-600 text-sm rounded">{error}</div>}
+          <form onSubmit={handlePreview} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">选择剧本 *</label>
+              <select value={form.script_id} onChange={e => setForm({...form, script_id: e.target.value})} className="w-full px-3 py-2 border rounded-lg disabled:bg-gray-100" required disabled={generating}>
+                <option value="">选择剧本</option>
+                {scripts.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">改编类型 *</label>
+              <select value={form.adaptation_type} onChange={e => setForm({...form, adaptation_type: e.target.value})} className="w-full px-3 py-2 border rounded-lg disabled:bg-gray-100" disabled={generating}>
+                {ADAPT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">改编指令 *</label>
+              <textarea
+                value={form.instruction} onChange={e => setForm({...form, instruction: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg h-32 disabled:bg-gray-100"
+                placeholder="描述你的改编需求，如：将死亡方式从刀杀改为毒杀，凶手动机不变，线索中刀相关证据改为毒相关证据"
+                required
+                disabled={generating}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={generating}
+              className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400"
+            >
+              {generating ? "🔄 AI分析中..." : "📋 生成改编方案"}
+            </button>
+          </form>
+        </div>
+
+        {/* 改编方案预览（Step 1结果） */}
+        {preview && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-6">
+            <h2 className="text-lg font-bold mb-2">改编方案 — {preview.script_name}</h2>
+            <div className="whitespace-pre-wrap text-sm mb-4">{preview.preview}</div>
+            {preview.need_confirm && (
+              <div className="p-3 bg-orange-100 text-orange-800 rounded-lg text-sm mb-4">
+                ⚠️ {preview.confirm_message}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPreview(null)}
+                className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleGenerate}
+                disabled={generating}
+                className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400"
+              >
+                {generating ? "🔄 AI改编中..." : "✅ 确认并生成全本"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 改编结果（Step 2结果） */}
+        {result && (
+          <div className="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 className="text-lg font-bold mb-2">改编结果 — {result.script_name}</h2>
+            {result.is_truncated && (
+              <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm font-medium">
+                {result.truncation_warning}
+              </div>
+            )}
+            {/* 并排对比视图（规格文档4.2.3节步骤⑤） */}
+            {showComparison ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <h3 className="text-sm font-medium text-gray-600 mb-2">原版剧本</h3>
+                  <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-3 rounded-lg max-h-[500px] overflow-y-auto border border-gray-200">
+                    {loadingOriginal ? "加载中..." : originalText || "（无法加载）"}
+                  </pre>
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium text-purple-600 mb-2">改编版本</h3>
+                  <pre className="whitespace-pre-wrap text-xs bg-purple-50 p-3 rounded-lg max-h-[500px] overflow-y-auto border border-purple-200">
+                    {result.content}
+                  </pre>
+                </div>
+              </div>
+            ) : (
+              <div className="prose max-w-none">
+                <pre className="whitespace-pre-wrap text-sm bg-gray-50 p-4 rounded-lg max-h-[500px] overflow-y-auto">
+                  {result.content}
+                </pre>
+              </div>
+            )}
+            <div className="flex gap-3 mt-3">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(result.content);
+                  alert("已复制到剪贴板");
+                }}
+                className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 text-sm"
+              >
+                复制结果
+              </button>
+              <button
+                onClick={toggleComparison}
+                disabled={loadingOriginal}
+                className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm"
+              >
+                {showComparison ? "收起对比" : loadingOriginal ? "加载中..." : "对比原版"}
+              </button>
+              <button
+                onClick={handleExport}
+                disabled={exporting}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 text-sm"
+              >
+                {exporting ? "导出中..." : "导出 DOCX"}
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              导出文件自动添加「改编版本 · 仅供内部使用」水印
+            </p>
+          </div>
+        )}
+
+        {/* 改编历史 */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-lg font-bold mb-4">改编历史</h2>
+          <div className="space-y-3">
+            {adaptations.map(a => (
+              <div key={a.id} className="border rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-medium">{a.script_name || "未知剧本"}</span>
+                  <span className="px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded">
+                    {ADAPT_TYPE_LABELS[a.adaptation_type] || a.adaptation_type}
+                  </span>
+                  <span className="text-xs text-gray-400">{new Date(a.created_at).toLocaleString()}</span>
+                </div>
+                <div className="text-sm text-gray-600">{a.instruction}</div>
+              </div>
+            ))}
+            {adaptations.length === 0 && (
+              <div className="text-center text-gray-400 py-6">暂无改编记录</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
