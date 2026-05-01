@@ -243,25 +243,27 @@ export default function ScriptsPage() {
       const data = await resp.json();
 
       if (resp.ok && data.files) {
-        // 更新状态：匹配服务端返回结果
+        // 更新状态：parsing=后台解析中, deduped=已去重
         for (let i = 0; i < pendingFiles.length; i++) {
           const entry = pendingFiles[i];
           const result = data.files[i];
           if (result) {
-            if (result.status === "success") {
-              updateEntry(entry.id, { status: result.deduped ? "deduped" : "done" });
+            if (result.status === "parsing") {
+              updateEntry(entry.id, { status: "done" });
+            } else if (result.status === "deduped") {
+              updateEntry(entry.id, { status: "deduped" });
             } else {
-              updateEntry(entry.id, { status: "error", error: result.error || "解析失败" });
+              updateEntry(entry.id, { status: "error", error: "上传失败" });
             }
           }
         }
-        // 全部成功后自动关闭，部分失败保持弹窗让用户修正
-        const allOk = data.files.every((r: any) => r.status === "success");
-        if (allOk) {
-          setTimeout(() => { setShowModal(false); clearEntries(); resetForm(); fetchScripts(keyword); }, 1000);
+        // 全部已接收 → 关闭弹窗
+        const allDone = data.files.every((r: any) => r.status === "parsing" || r.status === "deduped");
+        if (allDone) {
+          setError("");
+          setTimeout(() => { setShowModal(false); clearEntries(); resetForm(); fetchScripts(keyword); }, 800);
         }
       } else {
-        // 全部失败
         for (const e of pendingFiles) updateEntry(e.id, { status: "error", error: data.error || "上传失败" });
         setError(data.error || "上传失败");
       }
