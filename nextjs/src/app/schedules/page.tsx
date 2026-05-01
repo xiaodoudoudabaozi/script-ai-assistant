@@ -78,10 +78,7 @@ export default function SchedulesPage() {
   async function fetchSchedules() {
     try {
       setError("");
-      const userData = localStorage.getItem("user");
-      const resp = await fetch(`/api/schedules?month=${currentMonth}`, {
-        headers: { "x-user-data": userData || "" },
-      });
+      const resp = await fetch(`/api/schedules?month=${currentMonth}`);
       const data = await resp.json();
       if (resp.ok) setSchedules(data.schedules || []);
       else setError(data.error || "加载排班失败");
@@ -91,10 +88,7 @@ export default function SchedulesPage() {
 
   async function fetchEmployees() {
     try {
-      const userData = localStorage.getItem("user");
-      const resp = await fetch("/api/employees", {
-        headers: { "x-user-data": userData || "" },
-      });
+      const resp = await fetch("/api/employees");
       const data = await resp.json();
       if (resp.ok) setEmployees(data.employees || []);
     } catch { /* ignore - 员工列表加载失败不影响排班查看 */ }
@@ -115,7 +109,7 @@ export default function SchedulesPage() {
     try {
       const resp = await fetch("/api/schedules", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-user-data": userData || "" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(addForm),
       });
       if (resp.ok) {
@@ -134,12 +128,8 @@ export default function SchedulesPage() {
     if (!confirm("确定删除该排班？")) return;
     setDeleting(prev => new Set(prev).add(id));
     setError("");
-    const userData = localStorage.getItem("user");
     try {
-      const resp = await fetch(`/api/schedules/${id}`, {
-        method: "DELETE",
-        headers: { "x-user-data": userData || "" },
-      });
+      const resp = await fetch(`/api/schedules/${id}`, { method: "DELETE" });
       if (resp.ok) fetchSchedules();
       else { const data = await resp.json(); setError(data.error || "删除失败"); }
     } catch { setError("删除失败"); }

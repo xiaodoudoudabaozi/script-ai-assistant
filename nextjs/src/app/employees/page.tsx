@@ -48,10 +48,7 @@ export default function EmployeesPage() {
 
   async function fetchEmployees() {
     try {
-      const userData = localStorage.getItem("user");
-      const resp = await fetch("/api/employees", {
-        headers: { "x-user-data": userData || "" }
-      });
+      const resp = await fetch("/api/employees");
       const data = await resp.json();
       if (resp.ok) {
         setEmployees(data.employees || []);
@@ -76,10 +73,7 @@ export default function EmployeesPage() {
     try {
       const resp = await fetch(url, {
         method,
-        headers: {
-          "Content-Type": "application/json",
-          "x-user-data": userData || ""
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form)
       });
       if (resp.ok) {
@@ -105,10 +99,7 @@ export default function EmployeesPage() {
     setError("");
     const userData = localStorage.getItem("user");
     try {
-      const resp = await fetch(`/api/employees/${id}`, {
-        method: "DELETE",
-        headers: { "x-user-data": userData || "" }
-      });
+      const resp = await fetch(`/api/employees/${id}`, { method: "DELETE" });
       if (resp.ok) {
         fetchEmployees();
       } else {

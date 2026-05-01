@@ -59,10 +59,7 @@ export default function MePage() {
     try {
       const resp = await fetch(`/api/employees/${user!.id}`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "x-user-data": userData || ""
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form)
       });
       const data = await resp.json();
