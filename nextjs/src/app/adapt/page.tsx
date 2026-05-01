@@ -62,7 +62,16 @@ export default function AdaptationsPage() {
     script_name: string;
   } | null>(null);
   const [error, setError] = useState("");
+  const [versions, setVersions] = useState<any[]>([]);
+  const [versionPreview, setVersionPreview] = useState<string | null>(null);
+  const [versionPreviewLabel, setVersionPreviewLabel] = useState("");
+  const [restoring, setRestoring] = useState(false);
   const router = useRouter();
+
+  // 选剧本时加载版本历史
+  useEffect(() => {
+    if (form.script_id) fetchVersions(form.script_id); else setVersions([]);
+  }, [form.script_id]);
 
   useEffect(() => {
     const userData = localStorage.getItem("user");
@@ -91,6 +100,61 @@ export default function AdaptationsPage() {
       if (resp.ok) setAdaptations(data.adaptations || []);
     } catch { /* ignore - 历史加载失败不阻塞页面 */ }
     finally { setLoading(false); }
+  }
+
+  // 加载版本历史
+  async function fetchVersions(scriptId: string) {
+    try {
+      const userData = localStorage.getItem("user");
+      const resp = await fetch(`/api/scripts/versions?scriptId=${scriptId}`, {
+        headers: { "x-user-data": userData || "" },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        setVersions(data.versions || []);
+      }
+    } catch {}
+  }
+
+  // 预览版本
+  async function previewVersion(versionId: string) {
+    try {
+      const userData = localStorage.getItem("user");
+      const resp = await fetch("/api/scripts/versions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-user-data": userData || "" },
+        body: JSON.stringify({ versionId }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        setVersionPreview(data.version.content);
+        setVersionPreviewLabel(data.version.label);
+      }
+    } catch { setError("加载版本内容失败"); }
+  }
+
+  // 恢复到指定版本
+  async function restoreVersion(versionId: string) {
+    if (!confirm("确定恢复到此版本？当前剧本内容将被覆盖。")) return;
+    setRestoring(true);
+    try {
+      const userData = localStorage.getItem("user");
+      const resp = await fetch("/api/scripts/versions/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-user-data": userData || "" },
+        body: JSON.stringify({ versionId, scriptId: form.script_id }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        setError("");
+        alert(`已恢复至 ${data.label}`);
+        fetchVersions(form.script_id);
+      } else {
+        const d = await resp.json().catch(() => ({ error: "恢复失败" }));
+        setError(d.error || "恢复失败");
+      }
+    } catch { setError("网络错误"); }
+    finally { setRestoring(false); }
   }
 
   // 页面可见时刷新
@@ -416,6 +480,64 @@ export default function AdaptationsPage() {
             )}
           </div>
         </div>
+
+        {/* 版本历史 */}
+        {form.script_id && (
+          <div className="bg-white rounded-lg shadow p-6 mt-6">
+            <h2 className="text-lg font-bold mb-4">版本历史</h2>
+
+            {/* 版本预览 */}
+            {versionPreview && (
+              <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium text-sm">预览: {versionPreviewLabel}</span>
+                  <button onClick={() => { setVersionPreview(null); setVersionPreviewLabel(""); }}
+                    className="text-xs text-gray-500 hover:text-gray-700">关闭</button>
+                </div>
+                <pre className="whitespace-pre-wrap text-xs max-h-64 overflow-y-auto bg-white p-3 rounded border">
+                  {versionPreview}
+                </pre>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              {versions.map(v => (
+                <div key={v.id} className="flex items-center gap-3 border rounded-lg px-4 py-2.5">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">{v.label}</span>
+                      <span className={`px-1.5 py-0.5 text-xs rounded ${
+                        v.source === 'original' ? 'bg-gray-100 text-gray-600' :
+                        v.source === 'adapted' ? 'bg-purple-100 text-purple-700' :
+                        'bg-green-100 text-green-700'
+                      }`}>
+                        {v.source === 'original' ? '原版' : v.source === 'adapted' ? '改编' : '恢复'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-400 mt-0.5 truncate">
+                      {v.preview}...
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      {new Date(v.created_at).toLocaleString()} · {(v.content_length / 1024).toFixed(1)}KB
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => previewVersion(v.id)}
+                    className="px-3 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+                  >预览</button>
+                  <button
+                    onClick={() => restoreVersion(v.id)}
+                    disabled={restoring}
+                    className="px-3 py-1 text-xs bg-green-50 text-green-600 rounded hover:bg-green-100 disabled:opacity-50"
+                  >恢复</button>
+                </div>
+              ))}
+              {versions.length === 0 && (
+                <div className="text-center text-gray-400 py-6">选择剧本查看版本历史 · 每次改编自动保存版本</div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

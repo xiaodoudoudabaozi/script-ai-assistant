@@ -277,6 +277,18 @@ ${scriptFullText}
       const finishReason = deepseekData.choices?.[0]?.finish_reason;
       const isTruncated = finishReason === "length";
 
+      // 保存版本（原版→新版本）
+      const vResult = await pool.query(
+        `SELECT COALESCE(MAX(version_number), 0) AS v FROM script_versions WHERE script_id = $1`,
+        [script_id]
+      );
+      const nextV = parseInt(vResult.rows[0].v) + 1;
+      await pool.query(
+        `INSERT INTO script_versions (script_id, version_number, label, content, source)
+         VALUES ($1, $2, $3, $4, 'original')`,
+        [script_id, nextV, `改编前 · 第${nextV}版`, scriptFullText]
+      );
+
       // 保存改编日志
       const changesSummary = adaptedContent.substring(0, 200) + "...";
       const logResult = await pool.query(
@@ -284,6 +296,14 @@ ${scriptFullText}
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id, adaptation_type, instruction, changes_summary, created_at`,
         [user.id, script_id, adaptation_type, instruction, changesSummary, ""]
+      );
+
+      // 保存改编后版本
+      const adaptId = logResult.rows[0].id;
+      await pool.query(
+        `INSERT INTO script_versions (script_id, version_number, label, content, source, adaptation_id)
+         VALUES ($1, $2, $3, $4, 'adapted', $5)`,
+        [script_id, nextV + 1, `改编后 · 第${nextV + 1}版`, adaptedContent, adaptId]
       );
 
       // #16修复：记录操作日志

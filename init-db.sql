@@ -132,6 +132,18 @@ CREATE TABLE IF NOT EXISTS qa_cache (
     UNIQUE(script_id, question_hash, character_name)
 );
 
+-- 版本历史表（改编版本追踪）
+CREATE TABLE IF NOT EXISTS script_versions (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    script_id       UUID NOT NULL REFERENCES scripts(id) ON DELETE CASCADE,
+    version_number  INT NOT NULL DEFAULT 1,
+    label           VARCHAR(255) DEFAULT '',
+    content         TEXT NOT NULL,
+    source          VARCHAR(50) NOT NULL DEFAULT 'adaptation',
+    adaptation_id   UUID REFERENCES adaptation_logs(id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- =====================================================
 -- 索引
 -- =====================================================
@@ -148,3 +160,4 @@ CREATE INDEX IF NOT EXISTS idx_adaptation_operator ON adaptation_logs(operator_i
 CREATE INDEX IF NOT EXISTS idx_operation_user     ON operation_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_operation_time     ON operation_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_script_files_script ON script_files(script_id);
+CREATE INDEX IF NOT EXISTS idx_versions_script ON script_versions(script_id, version_number DESC);
