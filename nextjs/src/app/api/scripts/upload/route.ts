@@ -213,7 +213,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 清除 QA 缓存
-    pool.query("DELETE FROM qa_cache WHERE script_id = $1::uuid", [scriptId]).catch(() => {});
+    pool.query("DELETE FROM qa_cache WHERE script_id = $1::uuid", [scriptId]).catch(err => console.warn("[qa_cache] 清除失败:", err.message));
 
     // ---------- 5. 立即返回（文件已存，后台解析中） ----------
     return NextResponse.json(

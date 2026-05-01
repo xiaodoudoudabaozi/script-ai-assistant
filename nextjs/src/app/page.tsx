@@ -42,7 +42,7 @@ export default function Home() {
   // 加载剧本（登录后才请求）
   useEffect(() => {
     if (!localStorage.getItem("token") && !localStorage.getItem("user")) { setScriptsLoading(false); return; }
-    fetch("/api/scripts/list").then(r => r.json()).then(d => setScripts(d.scripts || [])).catch(() => {}).finally(() => setScriptsLoading(false));
+    fetch("/api/scripts/list").then(r => r.json()).then(d => setScripts(d.scripts || [])).catch(err => console.warn("[剧本列表] 加载失败:", err.message)).finally(() => setScriptsLoading(false));
   }, []);
 
   // 自动滚动

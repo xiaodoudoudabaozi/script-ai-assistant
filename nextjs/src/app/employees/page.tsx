@@ -44,6 +44,7 @@ export default function EmployeesPage() {
     const onVisible = () => { if (document.visibilityState === "visible") fetchEmployees(); };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function fetchEmployees() {
@@ -66,7 +67,6 @@ export default function EmployeesPage() {
     e.preventDefault();
     setSaving(true);
     setError("");
-    const userData = localStorage.getItem("user");
     const url = editingEmployee ? `/api/employees/${editingEmployee.id}` : "/api/employees";
     const method = editingEmployee ? "PUT" : "POST";
 
@@ -97,7 +97,6 @@ export default function EmployeesPage() {
     if (!confirm("确定删除该员工？")) return;
     setDeleting(prev => new Set(prev).add(id));
     setError("");
-    const userData = localStorage.getItem("user");
     try {
       const resp = await fetch(`/api/employees/${id}`, { method: "DELETE" });
       if (resp.ok) {

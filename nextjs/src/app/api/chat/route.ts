@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
         await pool.query(
           `UPDATE qa_cache SET hit_count = hit_count + 1 WHERE script_id = $1::uuid AND question_hash = $2 AND character_name = $3`,
           [scriptId, questionHash, cacheKey]
-        ).catch(() => {});
+        ).catch(err => console.warn("[qa_cache] 计数更新失败:", err.message));
 
         const cacheStream = new ReadableStream({
           start(controller) {
@@ -249,7 +249,7 @@ export async function POST(req: NextRequest) {
                      ON CONFLICT (script_id, question_hash, character_name) DO UPDATE
                      SET answer = $4, created_at = NOW()`,
                     [scriptId, questionHash, message.trim(), fullAssistantMsg, cacheKey]
-                  ).catch(() => {});
+                  ).catch(err => console.warn("[qa_cache] 写入失败:", err.message));
                 }
               }
               // 截断检测（规格文档4.2.3节）

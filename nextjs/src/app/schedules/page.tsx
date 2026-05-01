@@ -105,7 +105,6 @@ export default function SchedulesPage() {
     e.preventDefault();
     setError("");
     setSaving(true);
-    const userData = localStorage.getItem("user");
     try {
       const resp = await fetch("/api/schedules", {
         method: "POST",
