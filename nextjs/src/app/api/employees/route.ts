@@ -21,8 +21,8 @@ export async function GET(request: NextRequest) {
       } catch {}
     }
     
-    // 员工只能看自己，管理员可以看全部
-    if (userData?.role === "admin") {
+    // 员工只能看自己，管理员/组长可以看全部
+    if (userData?.role === "admin" || userData?.role === "leader") {
       const result = await pool.query(
         "SELECT id, name, role, phone, position, created_at FROM employees ORDER BY created_at DESC"
       );

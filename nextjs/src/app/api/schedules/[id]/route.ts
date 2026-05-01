@@ -1,4 +1,4 @@
-import { getUser } from "@/lib/auth";
+import { getUser, isAdminOrLeader } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/pg";
 
@@ -11,7 +11,7 @@ export async function DELETE(
   try {
     const user = getUser(request);
     if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
-    if (user.role !== "admin") return NextResponse.json({ error: "无权限" }, { status: 403 });
+    if (!isAdminOrLeader(user.role)) return NextResponse.json({ error: "无权限" }, { status: 403 });
 
     const { id } = await params;
     const result = await pool.query("DELETE FROM schedules WHERE id = $1 RETURNING id", [id]);

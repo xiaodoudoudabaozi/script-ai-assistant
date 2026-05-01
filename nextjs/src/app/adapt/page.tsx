@@ -1,7 +1,42 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+
+// 简版行级diff: 返回 [{type: 'same'|'added'|'removed', text: string}]
+function lineDiff(original: string, adapted: string) {
+  const oLines = original.split("\n");
+  const aLines = adapted.split("\n");
+  const result: { type: "same" | "added" | "removed"; text: string }[] = [];
+  let oi = 0, ai = 0;
+  while (oi < oLines.length || ai < aLines.length) {
+    if (oi >= oLines.length) { result.push({ type: "added", text: aLines[ai++] }); continue; }
+    if (ai >= aLines.length) { result.push({ type: "removed", text: oLines[oi++] }); continue; }
+    if (oLines[oi] === aLines[ai]) { result.push({ type: "same", text: oLines[oi] }); oi++; ai++; continue; }
+    // 向前看5行找匹配
+    let found = false;
+    for (let look = 1; look <= 5 && ai + look < aLines.length; look++) {
+      if (oLines[oi] === aLines[ai + look]) {
+        for (let j = 0; j < look; j++) result.push({ type: "added", text: aLines[ai + j] });
+        ai += look;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      for (let look = 1; look <= 5 && oi + look < oLines.length; look++) {
+        if (oLines[oi + look] === aLines[ai]) {
+          for (let j = 0; j < look; j++) result.push({ type: "removed", text: oLines[oi + j] });
+          oi += look;
+          found = true;
+          break;
+        }
+      }
+    }
+    if (!found) { result.push({ type: "removed", text: oLines[oi++] }); result.push({ type: "added", text: aLines[ai++] }); }
+  }
+  return result;
+}
 
 interface Script {
   id: string;
@@ -382,20 +417,7 @@ export default function AdaptationsPage() {
               </div>
             )}
             {showComparison ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-600 mb-2">原版剧本</h3>
-                  <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-3 rounded-lg max-h-[70vh] overflow-y-auto border border-gray-200">
-                    {loadingOriginal ? "加载中..." : originalText || "（无法加载）"}
-                  </pre>
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-purple-600 mb-2">改编版本</h3>
-                  <pre className="whitespace-pre-wrap text-xs bg-purple-50 p-3 rounded-lg max-h-[70vh] overflow-y-auto border border-purple-200">
-                    {result.content}
-                  </pre>
-                </div>
-              </div>
+              <DiffView original={originalText || ""} adapted={result.content} loading={loadingOriginal} />
             ) : (
               <div className="prose max-w-none">
                 <pre className="whitespace-pre-wrap text-sm bg-gray-50 p-4 rounded-lg max-h-[70vh] overflow-y-auto">
@@ -498,6 +520,40 @@ export default function AdaptationsPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function DiffView({ original, adapted, loading }: { original: string; adapted: string; loading: boolean }) {
+  const diff = useMemo(() => {
+    if (!original || !adapted) return null;
+    return lineDiff(original, adapted);
+  }, [original, adapted]);
+
+  if (loading) return <div className="text-center py-8 text-gray-400">加载中...</div>;
+  if (!diff) return <div className="text-center py-8 text-gray-400">无法加载差异对比</div>;
+
+  const addedCount = diff.filter(d => d.type === "added").length;
+  const removedCount = diff.filter(d => d.type === "removed").length;
+
+  return (
+    <div className="mb-4">
+      <div className="flex gap-3 mb-2 text-xs">
+        <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-200 rounded" /> 新增 {addedCount}行</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 bg-red-200 rounded" /> 删除 {removedCount}行</span>
+      </div>
+      <pre className="whitespace-pre-wrap text-xs p-3 rounded-lg max-h-[70vh] overflow-y-auto border bg-white">
+        {diff.map((d, i) => (
+          <span key={i} className={
+            d.type === "added" ? "bg-green-100 block" :
+            d.type === "removed" ? "bg-red-100 block" : ""
+          }>
+            <span className="text-gray-400 inline-block w-8 text-right mr-2 select-none">{i + 1}</span>
+            {d.type === "added" ? "+ " : d.type === "removed" ? "- " : "  "}
+            {d.text}{"\n"}
+          </span>
+        ))}
+      </pre>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { getUser } from "@/lib/auth";
+import { getUser, isAdminOrLeader } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/pg";
 
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 员工只能看自己的排班
-    if (user.role !== "admin") {
+    if (!isAdminOrLeader(user.role)) {
       query += ` AND s.employee_id = $${idx++}`;
       values.push(user.id);
     } else if (employeeId) {
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
   try {
     const user = getUser(request);
     if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
-    if (user.role !== "admin") return NextResponse.json({ error: "无权限" }, { status: 403 });
+    if (!isAdminOrLeader(user.role)) return NextResponse.json({ error: "无权限" }, { status: 403 });
 
     const body = await request.json();
     // 支持单条和批量

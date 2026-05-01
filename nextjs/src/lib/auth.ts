@@ -69,3 +69,10 @@ export function requireAdmin(req: NextRequest): AuthUser | null {
   if (!user || user.role !== "admin") return null;
   return user;
 }
+
+/**
+ * 管理员或组长
+ */
+export function isAdminOrLeader(role: string): boolean {
+  return role === "admin" || role === "leader";
+}

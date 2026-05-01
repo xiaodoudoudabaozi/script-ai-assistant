@@ -24,7 +24,10 @@ export default function Home() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [citation, setCitation] = useState<{ text: string; context: string } | null>(null);
+  const [streamError, setStreamError] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const lastMsgRef = useRef("");
 
   const msgEnd = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -202,6 +205,60 @@ export default function Home() {
     } catch (e: any) { setError("创建新对话失败"); }
   };
 
+  // 共享 SSE 流读取
+  const readChatStream = async (reader: ReadableStreamDefaultReader<Uint8Array>) => {
+    const dec = new TextDecoder(); let buf = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n"); buf = lines.pop() || "";
+        for (const line of lines) {
+          const t = line.trim(); if (!t.startsWith("data: ")) continue;
+          const d2 = t.slice(6);
+          if (d2 === "[DONE]") { setStreamError(false); setIsLoading(false); continue; }
+          try {
+            const p = JSON.parse(d2);
+            if (p.error) { setMessages(prev => { const u = [...prev]; const last = u[u.length-1]; u[u.length-1] = { ...last, content: (last.content||"") + `\n❌ ${p.error}` }; return u; }); setStreamError(true); setIsLoading(false); }
+            if (p.content) { setMessages(prev => { const u = [...prev]; const last = u[u.length-1]; u[u.length-1] = { ...last, content: last.content + p.content }; lastMsgRef.current = last.content + p.content; return u; }); }
+          } catch {}
+        }
+      }
+      setStreamError(false); setIsLoading(false);
+    } catch {
+      setStreamError(true); setIsLoading(false);
+    }
+  };
+
+  // 继续被中断的回答
+  const resumeChat = async () => {
+    if (!selectedScript || !conversationId) return;
+    setStreamError(false);
+    setMessages(p => [...p, { role: "assistant", content: "" }]);
+    setIsLoading(true);
+    // 发一条系统消息让AI继续
+    await sendChat("请继续你未完成的回答，从上次中断的地方继续。");
+  };
+
+  // 发送聊天请求
+  const sendChat = async (msg: string) => {
+    const r = await fetch("/api/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scriptId: selectedScript!.id, conversationId, message: msg, characterName: characterName || undefined }),
+    });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({ error: "请求失败" }));
+      setMessages(p => { const u = [...p]; u[u.length-1] = { role: "assistant", content: `❌ ${d.error}` }; return u; });
+      return;
+    }
+    const reader = r.body?.getReader();
+    if (!reader) return;
+    await readChatStream(reader).catch((e: any) => {
+      setMessages(p => { const u = [...p]; u[u.length-1] = { ...u[u.length-1], content: `❌ 发送失败: ${e.message||"网络错误"}` }; return u; });
+    });
+  };
+
   // 发送消息
   const send = async () => {
     const msg = input.trim();
@@ -213,92 +270,67 @@ export default function Home() {
     setError(""); setInput("");
     setMessages(p => [...p, { role: "user", content: msg }, { role: "assistant", content: "" }]);
     setIsLoading(true);
-    try {
-      const r = await fetch("/api/chat", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scriptId: selectedScript.id, conversationId, message: msg, characterName: characterName || undefined }),
-      });
-      if (!r.ok) {
-        const d = await r.json().catch(() => ({ error: "请求失败" }));
-        setMessages(p => { const u = [...p]; u[u.length-1] = { role: "assistant", content: `❌ ${d.error}` }; return u; });
-        setIsLoading(false); return;
-      }
-      const reader = r.body?.getReader();
-      if (!reader) { setIsLoading(false); return; }
-      const dec = new TextDecoder(); let buf = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split("\n"); buf = lines.pop() || "";
-        for (const line of lines) {
-          const t = line.trim(); if (!t.startsWith("data: ")) continue;
-          const d2 = t.slice(6);
-          if (d2 === "[DONE]") { setIsLoading(false); continue; }
-          try {
-            const p = JSON.parse(d2);
-            if (p.error) { setMessages(prev => { const u = [...prev]; u[u.length-1] = { ...u[u.length-1], content: (u[u.length-1].content||"") + `\n❌ ${p.error}` }; return u; }); setIsLoading(false); }
-            if (p.content) { setMessages(prev => { const u = [...prev]; u[u.length-1] = { ...u[u.length-1], content: u[u.length-1].content + p.content }; return u; }); }
-          } catch {}
-        }
-      }
-      setIsLoading(false);
-    } catch (e: any) {
-      setMessages(p => { const u = [...p]; u[u.length-1] = { ...u[u.length-1], content: `❌ 发送失败: ${e.message||"网络错误"}` }; return u; });
-      setIsLoading(false);
-    }
+    await sendChat(msg);
   };
 
   // 快捷提问
   const quickAsk = (q: string) => {
-    if (!selectedScript || !conversationId) return;
-    setInput(q);
-    // 用 setTimeout 让 input 更新后再发送
-    setTimeout(() => {
-      const fakeEvent = { key: "Enter", shiftKey: false, preventDefault: () => {} } as any;
-      // 直接调用 send 逻辑
-      const msg = q.trim();
-      if (!msg || isLoading || !selectedScript || !conversationId) return;
-      setError(""); setInput("");
-      setMessages(p => [...p, { role: "user", content: msg }, { role: "assistant", content: "" }]);
-      setIsLoading(true);
-      fetch("/api/chat", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scriptId: selectedScript.id, conversationId, message: msg, characterName: characterName || undefined }),
-      }).then(async (r) => {
-        if (!r.ok) {
-          const d = await r.json().catch(() => ({ error: "请求失败" }));
-          setMessages(p => { const u = [...p]; u[u.length-1] = { ...u[u.length-1], content: `❌ ${d.error}` }; return u; });
-          setIsLoading(false); return;
-        }
-        const reader = r.body?.getReader();
-        if (!reader) { setIsLoading(false); return; }
-        const dec = new TextDecoder(); let buf = "";
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += dec.decode(value, { stream: true });
-          const lines = buf.split("\n"); buf = lines.pop() || "";
-          for (const line of lines) {
-            const t = line.trim(); if (!t.startsWith("data: ")) continue;
-            const d2 = t.slice(6);
-            if (d2 === "[DONE]") { setIsLoading(false); continue; }
-            try {
-              const p = JSON.parse(d2);
-              if (p.error) { setMessages(prev => { const u = [...prev]; u[u.length-1] = { ...u[u.length-1], content: (u[u.length-1].content||"") + `\n❌ ${p.error}` }; return u; }); setIsLoading(false); }
-              if (p.content) { setMessages(prev => { const u = [...prev]; u[u.length-1] = { ...u[u.length-1], content: u[u.length-1].content + p.content }; return u; }); }
-            } catch {}
-          }
-        }
-        setIsLoading(false);
-      }).catch((e: any) => {
-        setMessages(p => { const u = [...p]; u[u.length-1] = { ...u[u.length-1], content: `❌ 发送失败: ${e.message||"网络错误"}` }; return u; });
-        setIsLoading(false);
-      });
-    }, 50);
+    if (!selectedScript || !conversationId || isLoading) return;
+    setInput("");
+    setMessages(p => [...p, { role: "user", content: q }, { role: "assistant", content: "" }]);
+    setIsLoading(true);
+    sendChat(q);
   };
 
   const filteredScripts = scriptSearch ? scripts.filter(s => (s.name||"").toLowerCase().includes(scriptSearch.toLowerCase())) : scripts;
+  // 引用溯源：查找 scriptFullText 中的引用上下文
+  const lookupCitation = async (citeText: string) => {
+    try {
+      // 从后端获取剧本全文
+      const sid = selectedScript?.id;
+      if (!sid) return;
+      // 用缓存接口获取
+      const r = await fetch(`/api/scripts/cache?id=${sid}`);
+      if (!r.ok) return;
+      const d = await r.json();
+      const fullText: string = d.text || "";
+      // 提取引用关键词（去掉【】符号）
+      const keywords = citeText.replace(/[【】]/g, "").split(/[·\s]+/).filter(Boolean);
+      // 在全文搜索匹配行
+      const lines = fullText.split("\n");
+      let bestLine = -1;
+      for (const kw of keywords) {
+        const idx = lines.findIndex(l => l.includes(kw));
+        if (idx >= 0) { bestLine = idx; break; }
+      }
+      if (bestLine >= 0) {
+        const start = Math.max(0, bestLine - 2);
+        const end = Math.min(lines.length, bestLine + 5);
+        setCitation({ text: citeText, context: lines.slice(start, end).join("\n") });
+      }
+    } catch {}
+  };
+
+  // 渲染消息中的引用为可点击链接
+  const renderMessage = (content: string) => {
+    const regex = /【[^】]+】/g;
+    const parts = [];
+    let lastIdx = 0;
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+      if (match.index > lastIdx) parts.push(content.slice(lastIdx, match.index));
+      parts.push(
+        <button key={match.index} className="citation" onClick={() => lookupCitation(match[0])}
+          title="点击查看原文上下文">
+          {match[0]}
+        </button>
+      );
+      lastIdx = match.index + match[0].length;
+    }
+    if (lastIdx < content.length) parts.push(content.slice(lastIdx));
+    return parts.length > 0 ? parts : content;
+  };
+
   const genres = [...new Set(scripts.map((s: any) => s.genre).filter(Boolean))];
 
   return (
@@ -391,6 +423,7 @@ export default function Home() {
 
             {/* PC导航 */}
             <div className="hidden md:flex items-center gap-1 ml-1">
+              {user.role==="admin" && <a href="/dashboard" className="text-xs text-green-600 hover:underline px-1">仪表盘</a>}
               {user.role==="admin" && <a href="/employees" className="text-xs text-blue-600 hover:underline px-1">员工</a>}
               <a href="/schedules" className="text-xs text-blue-600 hover:underline px-1">排班</a>
               <a href="/scripts" className="text-xs text-blue-600 hover:underline px-1">剧本</a>
@@ -480,10 +513,23 @@ export default function Home() {
         {user && messages.map((m, i) => (
           <div key={i} className={`flex ${m.role==="user"?"justify-end":"justify-start"}`}>
             <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm whitespace-pre-wrap ${m.role==="user"?"bg-blue-600 text-white":"bg-white border shadow-sm"}`}>
-              {m.content || <span className="inline-flex gap-1"><span className="animate-bounce">●</span><span className="animate-bounce" style={{animationDelay:"0.1s"}}>●</span><span className="animate-bounce" style={{animationDelay:"0.2s"}}>●</span></span>}
+              {m.content ? (m.role === "assistant" ? renderMessage(m.content) : m.content) : <span className="inline-flex gap-1"><span className="animate-bounce">●</span><span className="animate-bounce" style={{animationDelay:"0.1s"}}>●</span><span className="animate-bounce" style={{animationDelay:"0.2s"}}>●</span></span>}
             </div>
           </div>
         ))}
+
+        {/* 引用溯源弹窗 */}
+        {citation && (
+          <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center" onClick={() => setCitation(null)}>
+            <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 p-5 max-h-[70vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold text-sm">原文引用: {citation.text}</h3>
+                <button onClick={() => setCitation(null)} className="text-gray-400 hover:text-gray-600 text-lg">×</button>
+              </div>
+              <pre className="whitespace-pre-wrap text-xs bg-gray-50 p-3 rounded-lg border">{citation.context}</pre>
+            </div>
+          </div>
+        )}
 
         {user && messages.length===0 && !error && !historyLoading && (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
@@ -493,6 +539,13 @@ export default function Home() {
         )}
         {historyLoading && (
           <div className="flex items-center justify-center py-12 text-gray-400 text-sm">加载对话历史...</div>
+        )}
+        {streamError && messages.length > 0 && (
+          <div className="flex justify-center">
+            <button onClick={resumeChat} className="px-4 py-2 text-sm bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 hover:bg-yellow-100">
+              ⚡ 回答中断，点击继续
+            </button>
+          </div>
         )}
         <div ref={msgEnd} />
       </main>

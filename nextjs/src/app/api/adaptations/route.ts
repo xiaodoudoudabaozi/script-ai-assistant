@@ -272,40 +272,51 @@ ${scriptFullText}
       const finishReason = deepseekData.choices?.[0]?.finish_reason;
       const isTruncated = finishReason === "length";
 
-      // 保存版本（原版→新版本）
-      const vResult = await pool.query(
-        `SELECT COALESCE(MAX(version_number), 0) AS v FROM script_versions WHERE script_id = $1`,
-        [script_id]
-      );
-      const nextV = parseInt(vResult.rows[0].v) + 1;
-      await pool.query(
-        `INSERT INTO script_versions (script_id, version_number, label, content, source)
-         VALUES ($1, $2, $3, $4, 'original')`,
-        [script_id, nextV, `改编前 · 第${nextV}版`, scriptFullText]
-      );
+      // 事务保存：原版+日志+改编版+操作日志
+      const client = await pool.connect();
+      let logResult;
+      try {
+        await client.query('BEGIN');
 
-      // 保存改编日志
-      const changesSummary = adaptedContent.substring(0, 200) + "...";
-      const logResult = await pool.query(
-        `INSERT INTO adaptation_logs (operator_id, script_id, adaptation_type, instruction, changes_summary, output_file_path)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id, adaptation_type, instruction, changes_summary, created_at`,
-        [user.id, script_id, adaptation_type, instruction, changesSummary, ""]
-      );
+        const vResult = await client.query(
+          `SELECT COALESCE(MAX(version_number), 0) AS v FROM script_versions WHERE script_id = $1`,
+          [script_id]
+        );
+        const nextV = parseInt(vResult.rows[0].v) + 1;
 
-      // 保存改编后版本
-      const adaptId = logResult.rows[0].id;
-      await pool.query(
-        `INSERT INTO script_versions (script_id, version_number, label, content, source, adaptation_id)
-         VALUES ($1, $2, $3, $4, 'adapted', $5)`,
-        [script_id, nextV + 1, `改编后 · 第${nextV + 1}版`, adaptedContent, adaptId]
-      );
+        await client.query(
+          `INSERT INTO script_versions (script_id, version_number, label, content, source)
+           VALUES ($1, $2, $3, $4, 'original')`,
+          [script_id, nextV, `改编前 · 第${nextV}版`, scriptFullText]
+        );
 
-      // #16修复：记录操作日志
-      await pool.query(
-        `INSERT INTO operation_logs (user_id, action, detail, created_at) VALUES ($1, 'adaptation', $2, NOW())`,
-        [user.id, `改编剧本: ${script.name} - ${ADAPT_TYPES[adaptation_type] || adaptation_type}`]
-      );
+        const changesSummary = adaptedContent.substring(0, 200) + "...";
+        logResult = await client.query(
+          `INSERT INTO adaptation_logs (operator_id, script_id, adaptation_type, instruction, changes_summary, output_file_path)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, adaptation_type, instruction, changes_summary, created_at`,
+          [user.id, script_id, adaptation_type, instruction, changesSummary, ""]
+        );
+
+        const adaptId = logResult.rows[0].id;
+        await client.query(
+          `INSERT INTO script_versions (script_id, version_number, label, content, source, adaptation_id)
+           VALUES ($1, $2, $3, $4, 'adapted', $5)`,
+          [script_id, nextV + 1, `改编后 · 第${nextV + 1}版`, adaptedContent, adaptId]
+        );
+
+        await client.query(
+          `INSERT INTO operation_logs (user_id, action, detail, created_at) VALUES ($1, 'adaptation', $2, NOW())`,
+          [user.id, `改编剧本: ${script.name} - ${ADAPT_TYPES[adaptation_type] || adaptation_type}`]
+        );
+
+        await client.query('COMMIT');
+      } catch (txErr) {
+        await client.query('ROLLBACK');
+        throw txErr;
+      } finally {
+        client.release();
+      }
 
       return NextResponse.json({
         adaptation: logResult.rows[0],
