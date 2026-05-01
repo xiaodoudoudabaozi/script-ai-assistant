@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/pg";
+import { getUser } from "@/lib/auth";
 import {
   Document,
   Packer,
@@ -15,12 +16,6 @@ import {
   Header,
   AlignmentType,
 } from "docx";
-
-function getUser(req: NextRequest) {
-  const h = req.headers.get("x-user-data");
-  if (!h) return null;
-  try { return JSON.parse(h); } catch { return null; }
-}
 
 export async function POST(request: NextRequest) {
   try {

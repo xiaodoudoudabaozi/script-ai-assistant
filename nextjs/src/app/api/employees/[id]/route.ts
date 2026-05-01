@@ -1,15 +1,7 @@
+import { getUser } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/pg";
 
-function getUserFromRequest(request: NextRequest) {
-  const userHeader = request.headers.get("x-user-data");
-  if (!userHeader) return null;
-  try {
-    return JSON.parse(userHeader);
-  } catch {
-    return null;
-  }
-}
 
 export async function GET(
   request: NextRequest,

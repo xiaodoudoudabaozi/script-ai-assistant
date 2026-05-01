@@ -1,3 +1,4 @@
+import { getUser } from "@/lib/auth";
 /**
  * GET /api/system/disk
  *
@@ -12,11 +13,6 @@ import { promisify } from "util";
 
 const execAsync = promisify(exec);
 
-function getUser(req: NextRequest) {
-  const h = req.headers.get("x-user-data");
-  if (!h) return null;
-  try { return JSON.parse(h); } catch { return null; }
-}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

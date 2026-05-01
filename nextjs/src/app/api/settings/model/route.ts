@@ -1,11 +1,7 @@
+import { getUser } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/pg";
 
-function getUser(req: NextRequest) {
-  const h = req.headers.get("x-user-data");
-  if (!h) return null;
-  try { return JSON.parse(h); } catch { return null; }
-}
 
 const VALID_MODELS = ["deepseek-v4-pro", "deepseek-v4-flash"];
 

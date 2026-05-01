@@ -1,12 +1,8 @@
+import { getUser } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/pg";
 import { deleteCache, deleteAllFileCaches } from "@/lib/cache";
 
-function getUser(req: NextRequest) {
-  const h = req.headers.get("x-user-data");
-  if (!h) return null;
-  try { return JSON.parse(h); } catch { return null; }
-}
 
 // PUT /api/scripts/meta/[id] — 更新剧本元数据（管理员）
 export async function PUT(

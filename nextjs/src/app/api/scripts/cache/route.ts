@@ -7,12 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readCache } from "@/lib/cache";
 import { pool } from "@/lib/pg";
-
-function getUser(req: NextRequest) {
-  const h = req.headers.get("x-user-data");
-  if (!h) return null;
-  try { return JSON.parse(h); } catch { return null; }
-}
+import { getUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

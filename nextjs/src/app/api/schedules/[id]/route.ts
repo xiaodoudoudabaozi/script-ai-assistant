@@ -1,11 +1,7 @@
+import { getUser } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/pg";
 
-function getUser(req: NextRequest) {
-  const h = req.headers.get("x-user-data");
-  if (!h) return null;
-  try { return JSON.parse(h); } catch { return null; }
-}
 
 // DELETE /api/schedules/[id] — 删除单条排班（管理员）
 export async function DELETE(
