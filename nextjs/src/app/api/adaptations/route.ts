@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/pg";
 import { readCache, readAllFileTexts } from "@/lib/cache";
-
-function getUser(req: NextRequest) {
-  const h = req.headers.get("x-user-data");
-  if (!h) return null;
-  try { return JSON.parse(h); } catch { return null; }
-}
+import { getUser } from "@/lib/auth";
 
 // 改编类型映射（规格文档4.2.2节）
 const ADAPT_TYPES: Record<string, string> = {
