@@ -6,8 +6,16 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/pg";
-import { sessions } from "@/lib/auth";
 import crypto from "crypto";
+
+// 与 middleware 共享的全局 session store
+function getSessions(): Map<string, any> {
+  if (!(globalThis as any).__sessions) {
+    (globalThis as any).__sessions = new Map();
+  }
+  return (globalThis as any).__sessions;
+}
+const sessions = getSessions();
 
 const SESSION_EXPIRY_DAYS = 7;
 const AUTO_LOGOUT_MINUTES = 30;

@@ -1,9 +1,9 @@
 /**
  * auth.ts - 统一认证辅助函数
  *
- * v1: 从 x-user-data header 提取用户信息（前端 localStorage 传入）
- *     同时支持 session cookie 校验（HTTPOnly cookie）
- * v2: 迁移为纯 cookie-based session + Redis
+ * v2: 全局 session store（与 middleware.ts 共享）
+ *     所有 API 路由由 middleware 统一校验
+ *     路由处理器可从 x-user-id / x-user-role header 获取用户
  */
 
 import { NextRequest } from "next/server";
@@ -16,55 +16,53 @@ export interface AuthUser {
   position?: string;
 }
 
-const sessions = new Map<string, { userId: string; role: string; exp: number; lastActivity: number }>();
+// 全局 session store（middleware.ts 和 login route 共享）
+function getSessions(): Map<string, any> {
+  if (!(globalThis as any).__sessions) {
+    (globalThis as any).__sessions = new Map();
+  }
+  return (globalThis as any).__sessions;
+}
 
-/** 暴露 session store 供 login route 使用 */
-export { sessions };
+export const sessions = getSessions();
 
 /**
- * 从请求中提取已认证用户
- * 优先级：x-user-data header > session cookie
+ * 从 middleware 注入的 headers 提取用户信息
+ * middleware 已验证 session，此处直接读取
  */
 export function getUser(req: NextRequest): AuthUser | null {
-  // 方式1: x-user-data header（v1 主要方式）
+  const userId = req.headers.get("x-user-id");
+  const userRole = req.headers.get("x-user-role");
+
+  if (userId && userRole) {
+    return {
+      id: userId,
+      name: "",
+      role: userRole as "staff" | "admin",
+    };
+  }
+
+  // 回退：兼容旧的 x-user-data header（逐步废弃）
   const header = req.headers.get("x-user-data");
   if (header) {
     try {
       const user = JSON.parse(header);
       if (user?.id && user?.role) return user as AuthUser;
-    } catch { /* ignore */ }
-  }
-
-  // 方式2: HTTPOnly session cookie（v2 主要方式）
-  const token =
-    req.cookies.get("session_token")?.value ||
-    req.headers.get("Authorization")?.replace("Bearer ", "");
-
-  if (token && sessions.has(token)) {
-    const session = sessions.get(token)!;
-    if (session.exp > Date.now()) {
-      session.lastActivity = Date.now();
-      return {
-        id: session.userId,
-        name: "", // cookie session 不含 name（v2 改进点）
-        role: session.role as "staff" | "admin",
-      };
-    }
-    sessions.delete(token);
+    } catch {}
   }
 
   return null;
 }
 
 /**
- * 要求已认证 — 未认证返回 null（调用方返回 401）
+ * 要求已认证
  */
 export function requireAuth(req: NextRequest): AuthUser | null {
   return getUser(req);
 }
 
 /**
- * 要求管理员 — 非管理员返回 null（调用方返回 403）
+ * 要求管理员
  */
 export function requireAdmin(req: NextRequest): AuthUser | null {
   const user = getUser(req);
