@@ -19,7 +19,6 @@ interface Adaptation {
   created_at: string;
 }
 
-// 规格文档4.2.2节：4种改编类型
 const ADAPT_TYPES = [
   { value: "element_replacement", label: "🔄 元素替换 — 改具体细节，保持结构（刀杀→毒杀、民国→现代）" },
   { value: "plot_tweak", label: "📖 剧情微调 — 改逻辑衔接，不改结构（冲突提前、线索位移）" },
@@ -93,21 +92,17 @@ export default function AdaptationsPage() {
 
   async function fetchAdaptations() {
     try {
-      const userData = localStorage.getItem("user");
-      const resp = await fetch("/api/adaptations", {  });
+      const resp = await fetch("/api/adaptations");
       const data = await resp.json();
       if (resp.ok) setAdaptations(data.adaptations || []);
-    } catch { /* ignore - 历史加载失败不阻塞页面 */ }
+    } catch { /* ignore */ }
     finally { setLoading(false); }
   }
 
   // 加载版本历史
   async function fetchVersions(scriptId: string) {
     try {
-      const userData = localStorage.getItem("user");
-      const resp = await fetch(`/api/scripts/versions?scriptId=${scriptId}`, {
-        ,
-      });
+      const resp = await fetch(`/api/scripts/versions?scriptId=${scriptId}`);
       if (resp.ok) {
         const data = await resp.json();
         setVersions(data.versions || []);
@@ -118,10 +113,9 @@ export default function AdaptationsPage() {
   // 预览版本
   async function previewVersion(versionId: string) {
     try {
-      const userData = localStorage.getItem("user");
       const resp = await fetch("/api/scripts/versions", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-user-data": userData || "" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ versionId }),
       });
       if (resp.ok) {
@@ -137,10 +131,9 @@ export default function AdaptationsPage() {
     if (!confirm("确定恢复到此版本？当前剧本内容将被覆盖。")) return;
     setRestoring(true);
     try {
-      const userData = localStorage.getItem("user");
       const resp = await fetch("/api/scripts/versions/restore", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-user-data": userData || "" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ versionId, scriptId: form.script_id }),
       });
       if (resp.ok) {
@@ -176,10 +169,9 @@ export default function AdaptationsPage() {
     setPreview(null);
 
     try {
-      const userData = localStorage.getItem("user");
       const resp = await fetch("/api/adaptations", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-user-data": userData || "" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, step: "preview" }),
       });
       const data = await resp.json();
@@ -223,10 +215,9 @@ export default function AdaptationsPage() {
     setPreview(null);
 
     try {
-      const userData = localStorage.getItem("user");
       const resp = await fetch("/api/adaptations", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-user-data": userData || "" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, step: "generate" }),
       });
       const data = await resp.json();
@@ -239,6 +230,8 @@ export default function AdaptationsPage() {
           adaptation_id: data.adaptation?.id,
         });
         fetchAdaptations();
+        // 刷新版本列表
+        fetchVersions(form.script_id);
       } else {
         setError(data.error || "改编失败");
       }
@@ -249,7 +242,7 @@ export default function AdaptationsPage() {
     }
   }
 
-  // 并排对比（规格文档4.2.3节步骤⑤）
+  // 并排对比
   async function toggleComparison() {
     if (showComparison) {
       setShowComparison(false);
@@ -259,15 +252,10 @@ export default function AdaptationsPage() {
     if (!originalText) {
       setLoadingOriginal(true);
       try {
-        const userData = localStorage.getItem("user");
-        const resp = await fetch(`/api/scripts/meta?script_id=${form.script_id}`, {
-          ,
-        });
+        const resp = await fetch(`/api/scripts/meta?script_id=${form.script_id}`);
         const data = await resp.json();
         if (data.scripts?.[0]) {
-          const cacheResp = await fetch(`/api/scripts/cache?id=${form.script_id}`, {
-            ,
-          });
+          const cacheResp = await fetch(`/api/scripts/cache?id=${form.script_id}`);
           if (cacheResp.ok) {
             const cacheData = await cacheResp.json();
             setOriginalText(cacheData.text || "（原始剧本文本不可用）");
@@ -286,15 +274,14 @@ export default function AdaptationsPage() {
     setShowComparison(true);
   }
 
-  // 导出 DOCX（规格文档4.2.3节步骤⑦）
+  // 导出 DOCX
   async function handleExport() {
     if (!result) return;
     setExporting(true);
     try {
-      const userData = localStorage.getItem("user");
       const resp = await fetch("/api/adaptations/export", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-user-data": userData || "" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content: result.content,
           script_name: result.script_name,
@@ -306,7 +293,6 @@ export default function AdaptationsPage() {
         setError(data.error || "导出失败");
         return;
       }
-      // 触发浏览器下载
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -367,7 +353,7 @@ export default function AdaptationsPage() {
           </form>
         </div>
 
-        {/* 改编方案预览（Step 1结果） */}
+        {/* 改编方案预览 */}
         {preview && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-6">
             <h2 className="text-lg font-bold mb-2">改编方案 — {preview.script_name}</h2>
@@ -378,24 +364,15 @@ export default function AdaptationsPage() {
               </div>
             )}
             <div className="flex gap-3">
-              <button
-                onClick={() => setPreview(null)}
-                className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleGenerate}
-                disabled={generating}
-                className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400"
-              >
+              <button onClick={() => setPreview(null)} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">取消</button>
+              <button onClick={handleGenerate} disabled={generating} className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400">
                 {generating ? "🔄 AI改编中..." : "✅ 确认并生成全本"}
               </button>
             </div>
           </div>
         )}
 
-        {/* 改编结果（Step 2结果） */}
+        {/* 改编结果 */}
         {result && (
           <div className="bg-white rounded-lg shadow p-6 mb-6">
             <h2 className="text-lg font-bold mb-2">改编结果 — {result.script_name}</h2>
@@ -404,7 +381,6 @@ export default function AdaptationsPage() {
                 {result.truncation_warning}
               </div>
             )}
-            {/* 并排对比视图（规格文档4.2.3节步骤⑤） */}
             {showComparison ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
@@ -428,33 +404,18 @@ export default function AdaptationsPage() {
               </div>
             )}
             <div className="flex gap-3 mt-3">
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(result.content);
-                  alert("已复制到剪贴板");
-                }}
-                className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 text-sm"
-              >
-                复制结果
-              </button>
-              <button
-                onClick={toggleComparison}
-                disabled={loadingOriginal}
-                className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm"
-              >
+              <button onClick={() => { navigator.clipboard.writeText(result.content); alert("已复制到剪贴板"); }}
+                className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 text-sm">复制结果</button>
+              <button onClick={toggleComparison} disabled={loadingOriginal}
+                className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm">
                 {showComparison ? "收起对比" : loadingOriginal ? "加载中..." : "对比原版"}
               </button>
-              <button
-                onClick={handleExport}
-                disabled={exporting}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 text-sm"
-              >
+              <button onClick={handleExport} disabled={exporting}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 text-sm">
                 {exporting ? "导出中..." : "导出 DOCX"}
               </button>
             </div>
-            <p className="text-xs text-gray-400 mt-2">
-              导出文件自动添加「改编版本 · 仅供内部使用」水印
-            </p>
+            <p className="text-xs text-gray-400 mt-2">导出文件自动添加「改编版本 · 仅供内部使用」水印</p>
           </div>
         )}
 
@@ -485,7 +446,6 @@ export default function AdaptationsPage() {
           <div className="bg-white rounded-lg shadow p-6 mt-6">
             <h2 className="text-lg font-bold mb-4">版本历史</h2>
 
-            {/* 版本预览 */}
             {versionPreview && (
               <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-2">
