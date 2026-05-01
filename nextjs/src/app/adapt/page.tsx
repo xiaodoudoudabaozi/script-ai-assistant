@@ -84,8 +84,7 @@ export default function AdaptationsPage() {
 
   async function fetchScripts() {
     try {
-      const userData = localStorage.getItem("user");
-      const resp = await fetch("/api/scripts/meta", { headers: { "x-user-data": userData || "" } });
+      const resp = await fetch("/api/scripts/meta");
       const data = await resp.json();
       if (resp.ok) setScripts(data.scripts || []);
       else setError(data.error || "加载剧本列表失败");
@@ -95,7 +94,7 @@ export default function AdaptationsPage() {
   async function fetchAdaptations() {
     try {
       const userData = localStorage.getItem("user");
-      const resp = await fetch("/api/adaptations", { headers: { "x-user-data": userData || "" } });
+      const resp = await fetch("/api/adaptations", {  });
       const data = await resp.json();
       if (resp.ok) setAdaptations(data.adaptations || []);
     } catch { /* ignore - 历史加载失败不阻塞页面 */ }
@@ -107,7 +106,7 @@ export default function AdaptationsPage() {
     try {
       const userData = localStorage.getItem("user");
       const resp = await fetch(`/api/scripts/versions?scriptId=${scriptId}`, {
-        headers: { "x-user-data": userData || "" },
+        ,
       });
       if (resp.ok) {
         const data = await resp.json();
@@ -262,12 +261,12 @@ export default function AdaptationsPage() {
       try {
         const userData = localStorage.getItem("user");
         const resp = await fetch(`/api/scripts/meta?script_id=${form.script_id}`, {
-          headers: { "x-user-data": userData || "" },
+          ,
         });
         const data = await resp.json();
         if (data.scripts?.[0]) {
           const cacheResp = await fetch(`/api/scripts/cache?id=${form.script_id}`, {
-            headers: { "x-user-data": userData || "" },
+            ,
           });
           if (cacheResp.ok) {
             const cacheData = await cacheResp.json();
