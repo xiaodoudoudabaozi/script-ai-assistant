@@ -92,11 +92,7 @@ export default function Home() {
             setMessages(histD.messages || []);
           }
         } catch {} finally { setHistoryLoading(false); }
-        fetch(`/api/scripts/files?scriptId=${scriptId}`).then(r => r.json()).then(d => {
-          const seen = new Set<string>(); const chars: string[] = [];
-          for (const f of (d.files || [])) { if (f.character_name && !seen.has(f.character_name)) { seen.add(f.character_name); chars.push(f.character_name); } }
-          setCharacterList(chars);
-        }).catch(() => {});
+        loadCharacterList(scriptId);
         return;
       }
     }
@@ -115,6 +111,7 @@ export default function Home() {
         setMessages(histD.messages || []);
       }
     } catch {} finally { setHistoryLoading(false); }
+    loadCharacterList(scriptId);
   };
 
   // 页面可见时刷新剧本列表
@@ -123,6 +120,24 @@ export default function Home() {
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
+
+  // 加载角色列表（独立函数，所有分支都调用）
+  const loadCharacterList = (scriptId: string) => {
+    fetch(`/api/scripts/files?scriptId=${scriptId}`).then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    }).then(d => {
+      const seen = new Set<string>();
+      const chars: string[] = [];
+      for (const f of (d.files || [])) {
+        if (f.character_name && !seen.has(f.character_name)) {
+          seen.add(f.character_name);
+          chars.push(f.character_name);
+        }
+      }
+      setCharacterList(chars);
+    }).catch(err => { console.warn("[角色列表] 加载失败:", err.message); });
+  };
 
   // 选剧本 → 先加载已有对话+历史，没有才创建新对话
   const selectScript = async (s: ScriptInfo) => {
@@ -134,6 +149,10 @@ export default function Home() {
     setCharacterName("");
     setCharacterList([]);
     setHistoryLoading(true);
+
+    // 无论走哪个分支，都加载角色列表
+    loadCharacterList(s.id);
+
     try {
       // 1. 先查已有对话
       const listR = await fetch(`/api/conversations?scriptId=${s.id}`);
@@ -168,22 +187,6 @@ export default function Home() {
       setConversationId((await r.json()).conversation.id);
     } catch (e: any) { setError("创建对话失败: " + (e.message || "")); }
     setHistoryLoading(false);
-
-    // 异步加载角色列表
-    fetch(`/api/scripts/files?scriptId=${s.id}`).then(r => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
-    }).then(d => {
-      const seen = new Set<string>();
-      const chars: string[] = [];
-      for (const f of (d.files || [])) {
-        if (f.character_name && !seen.has(f.character_name)) {
-          seen.add(f.character_name);
-          chars.push(f.character_name);
-        }
-      }
-      setCharacterList(chars);
-    }).catch(err => { console.warn("[角色列表] 加载失败:", err.message); });
   };
 
   // 新建对话
