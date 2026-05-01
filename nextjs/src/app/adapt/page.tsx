@@ -385,20 +385,20 @@ export default function AdaptationsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
                   <h3 className="text-sm font-medium text-gray-600 mb-2">原版剧本</h3>
-                  <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-3 rounded-lg max-h-[500px] overflow-y-auto border border-gray-200">
+                  <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-3 rounded-lg max-h-[70vh] overflow-y-auto border border-gray-200">
                     {loadingOriginal ? "加载中..." : originalText || "（无法加载）"}
                   </pre>
                 </div>
                 <div>
                   <h3 className="text-sm font-medium text-purple-600 mb-2">改编版本</h3>
-                  <pre className="whitespace-pre-wrap text-xs bg-purple-50 p-3 rounded-lg max-h-[500px] overflow-y-auto border border-purple-200">
+                  <pre className="whitespace-pre-wrap text-xs bg-purple-50 p-3 rounded-lg max-h-[70vh] overflow-y-auto border border-purple-200">
                     {result.content}
                   </pre>
                 </div>
               </div>
             ) : (
               <div className="prose max-w-none">
-                <pre className="whitespace-pre-wrap text-sm bg-gray-50 p-4 rounded-lg max-h-[500px] overflow-y-auto">
+                <pre className="whitespace-pre-wrap text-sm bg-gray-50 p-4 rounded-lg max-h-[70vh] overflow-y-auto">
                   {result.content}
                 </pre>
               </div>
@@ -453,7 +453,7 @@ export default function AdaptationsPage() {
                   <button onClick={() => { setVersionPreview(null); setVersionPreviewLabel(""); }}
                     className="text-xs text-gray-500 hover:text-gray-700">关闭</button>
                 </div>
-                <pre className="whitespace-pre-wrap text-xs max-h-64 overflow-y-auto bg-white p-3 rounded border">
+                <pre className="whitespace-pre-wrap text-xs max-h-96 overflow-y-auto bg-white p-3 rounded border">
                   {versionPreview}
                 </pre>
               </div>
