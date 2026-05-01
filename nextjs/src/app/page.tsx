@@ -21,9 +21,14 @@ export default function Home() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [characterName, setCharacterName] = useState("");  // 角色过滤
   const [characterList, setCharacterList] = useState<string[]>([]);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout>>();
 
   const msgEnd = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
 
   // 登录检查
   useEffect(() => {
@@ -39,10 +44,78 @@ export default function Home() {
 
   // 点击外部关闭剧本选择器
   useEffect(() => {
-    const handler = (e: MouseEvent) => { if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setShowScriptPicker(false); };
+    const handler = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setShowScriptPicker(false);
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setShowSearchResults(false);
+    };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  // 搜索对话历史（防抖）
+  const doSearch = (value: string) => {
+    clearTimeout(searchTimer.current);
+    if (value.trim().length < 2) { setSearchResults([]); setShowSearchResults(false); return; }
+    setSearching(true);
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const q = encodeURIComponent(value.trim());
+        const sid = selectedScript?.id ? `&scriptId=${selectedScript.id}` : "";
+        const r = await fetch(`/api/chat/search?q=${q}${sid}`);
+        if (r.ok) {
+          const d = await r.json();
+          setSearchResults(d.results || []);
+          setShowSearchResults(true);
+        }
+      } catch {} finally { setSearching(false); }
+    }, 300);
+  };
+
+  // 点击搜索结果 → 切换到对应对话
+  const goToConversation = async (convId: string, scriptId: string) => {
+    // 先切换剧本（如果需要）
+    if (selectedScript?.id !== scriptId) {
+      const s = scripts.find(x => x.id === scriptId);
+      if (s) {
+        setConversationId(convId);
+        setSelectedScript(s);
+        setShowSearchResults(false);
+        setSearch("");
+        setSearchResults([]);
+        setMessages([]);
+        setError("");
+        setHistoryLoading(true);
+        try {
+          const histR = await fetch(`/api/chat/history?conversationId=${convId}`);
+          if (histR.ok) {
+            const histD = await histR.json();
+            setMessages(histD.messages || []);
+          }
+        } catch {} finally { setHistoryLoading(false); }
+        fetch(`/api/scripts/files?scriptId=${scriptId}`).then(r => r.json()).then(d => {
+          const seen = new Set<string>(); const chars: string[] = [];
+          for (const f of (d.files || [])) { if (f.character_name && !seen.has(f.character_name)) { seen.add(f.character_name); chars.push(f.character_name); } }
+          setCharacterList(chars);
+        }).catch(() => {});
+        return;
+      }
+    }
+    // 同剧本，直接切对话
+    setConversationId(convId);
+    setShowSearchResults(false);
+    setSearch("");
+    setSearchResults([]);
+    setMessages([]);
+    setError("");
+    setHistoryLoading(true);
+    try {
+      const histR = await fetch(`/api/chat/history?conversationId=${convId}`);
+      if (histR.ok) {
+        const histD = await histR.json();
+        setMessages(histD.messages || []);
+      }
+    } catch {} finally { setHistoryLoading(false); }
+  };
 
   // 页面可见时刷新剧本列表
   useEffect(() => {
@@ -228,9 +301,31 @@ export default function Home() {
             </div>
 
             {/* 搜索框 */}
-            <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="搜索对话历史..."
-              className="flex-1 min-w-0 px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            <div className="flex-1 min-w-0 relative" ref={searchRef}>
+              <input type="text" value={search} onChange={e => { setSearch(e.target.value); doSearch(e.target.value); }}
+                onFocus={() => { if (searchResults.length > 0) setShowSearchResults(true); }}
+                placeholder="搜索对话历史..."
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              {searching && <span className="absolute right-3 top-2.5 text-xs text-gray-400">搜索中...</span>}
+              {showSearchResults && searchResults.length > 0 && (
+                <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-72 overflow-y-auto">
+                  {searchResults.map((r: any) => (
+                    <button key={r.id}
+                      onClick={() => goToConversation(r.conversationId, r.scriptId)}
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-blue-50 border-b border-gray-50">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium shrink-0">{r.scriptName}</span>
+                        <span className="text-xs text-gray-400 truncate">{r.conversationTitle}</span>
+                      </div>
+                      <div className="text-xs text-gray-600 line-clamp-2" dangerouslySetInnerHTML={{ __html: r.snippet }} />
+                    </button>
+                  ))}
+                </div>
+              )}
+              {showSearchResults && search.trim().length >= 2 && searchResults.length === 0 && !searching && (
+                <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-3 text-sm text-gray-400 text-center">无匹配结果</div>
+              )}
+            </div>
 
             {/* 新对话按钮 */}
             <button onClick={newConversation} disabled={!selectedScript}
