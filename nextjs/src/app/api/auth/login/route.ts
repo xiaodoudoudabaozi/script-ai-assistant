@@ -1,24 +1,16 @@
 /**
- * /api/auth/login/route.ts - 登录接口
- * #11修复：Token存HTTPOnly Cookie（规格文档4.5.5节）
- * #16修复：完整操作日志
+ * /api/auth/login/route.ts - 登录接口（JWT 版本）
+ * 签发 JWT token，HTTPOnly Cookie + 响应体双通道
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/pg";
-import crypto from "crypto";
+import { SignJWT, jwtVerify } from "jose";
 
-// 与 middleware 共享的全局 session store
-function getSessions(): Map<string, any> {
-  if (!(globalThis as any).__sessions) {
-    (globalThis as any).__sessions = new Map();
-  }
-  return (globalThis as any).__sessions;
-}
-const sessions = getSessions();
-
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || process.env.DEEPSEEK_API_KEY || "script-kill-local-dev"
+);
 const SESSION_EXPIRY_DAYS = 7;
-const AUTO_LOGOUT_MINUTES = 30;
 
 export const dynamic = "force-dynamic";
 
@@ -31,8 +23,8 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await pool.query(
-      `SELECT id, name, role, phone, position, password_hash 
-       FROM employees 
+      `SELECT id, name, role, phone, position, password_hash
+       FROM employees
        WHERE name = $1 OR phone = $1`,
       [employeeId]
     );
@@ -43,10 +35,10 @@ export async function POST(req: NextRequest) {
 
     const user = result.rows[0];
 
-    // bcrypt 密码验证（规格文档5.3节）
     if (!user.password_hash) {
       return NextResponse.json({ error: "账号未设置密码，请联系管理员" }, { status: 401 });
     }
+
     let validPassword = false;
     try {
       const bcrypt = await import("bcrypt");
@@ -56,7 +48,6 @@ export async function POST(req: NextRequest) {
     }
 
     if (!validPassword) {
-      // #16修复：记录登录失败
       await pool.query(
         `INSERT INTO operation_logs (user_id, action, detail, created_at) VALUES (NULL, 'login_failed', $1, NOW())`,
         [`登录失败: ${employeeId}`]
@@ -64,22 +55,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "工号或密码错误" }, { status: 401 });
     }
 
-    // 生成 session token
-    const token = crypto.randomUUID();
-    sessions.set(token, {
-      userId: user.id,
-      role: user.role,
-      exp: Date.now() + SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
-      lastActivity: Date.now(),
-    });
+    // 签发 JWT
+    const token = await new SignJWT({ userId: String(user.id), role: user.role })
+      .setProtectedHeader({ alg: "HS256" })
+      .setExpirationTime(`${SESSION_EXPIRY_DAYS}d`)
+      .sign(JWT_SECRET);
 
-    // #16修复：记录登录成功
     await pool.query(
       `INSERT INTO operation_logs (user_id, action, detail, created_at) VALUES ($1, 'login', '员工登录', NOW())`,
       [user.id]
     );
 
-    // #11修复：设置HTTPOnly Cookie
     const response = NextResponse.json({
       success: true,
       token,
@@ -107,56 +93,44 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// 验证 token（支持Cookie和Header两种方式）
+// 验证 JWT token
 export async function GET(req: NextRequest) {
-  // 优先从Cookie读取，其次从Authorization header
   const token =
     req.cookies.get("session_token")?.value ||
     req.headers.get("Authorization")?.replace("Bearer ", "");
 
-  if (!token || !sessions.has(token)) {
+  if (!token) {
     return NextResponse.json({ authenticated: false }, { status: 401 });
   }
 
-  const session = sessions.get(token);
-  if (!session || session.exp < Date.now()) {
-    sessions.delete(token);
-    return NextResponse.json({ authenticated: false }, { status: 401 });
+  try {
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    return NextResponse.json({
+      authenticated: true,
+      userId: payload.userId as string,
+      role: payload.role as string,
+    });
+  } catch {
+    const response = NextResponse.json({ authenticated: false }, { status: 401 });
+    response.cookies.set("session_token", "", { maxAge: 0, path: "/" });
+    return response;
   }
-
-  // #12修复：30分钟无操作自动登出
-  const inactiveMs = Date.now() - session.lastActivity;
-  if (inactiveMs > AUTO_LOGOUT_MINUTES * 60 * 1000) {
-    sessions.delete(token);
-    return NextResponse.json({ authenticated: false, reason: "session_expired" }, { status: 401 });
-  }
-
-  // 更新最后活动时间
-  session.lastActivity = Date.now();
-
-  return NextResponse.json({
-    authenticated: true,
-    userId: session.userId,
-    role: session.role,
-  });
 }
 
-// 登出
+// 登出（清除 cookie）
 export async function DELETE(req: NextRequest) {
   const token =
     req.cookies.get("session_token")?.value ||
     req.headers.get("Authorization")?.replace("Bearer ", "");
 
   if (token) {
-    const session = sessions.get(token);
-    if (session) {
-      // 记录登出日志
+    try {
+      const { payload } = await jwtVerify(token, JWT_SECRET);
       await pool.query(
         `INSERT INTO operation_logs (user_id, action, detail, created_at) VALUES ($1, 'logout', '员工登出', NOW())`,
-        [session.userId]
+        [payload.userId]
       ).catch(() => {});
-    }
-    sessions.delete(token);
+    } catch {}
   }
 
   const response = NextResponse.json({ success: true });
