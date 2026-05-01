@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 
-interface ScriptInfo { id: string; name?: string; genre?: string; player_count?: string; difficulty?: string; is_sensitive?: boolean; }
+interface ScriptInfo { id: string; name?: string; author?: string; genre?: string; player_count?: string; act_count?: number; difficulty?: string; duration?: string; is_sensitive?: boolean; sensitivity_note?: string; }
 interface ChatMessage { role: "user" | "assistant"; content: string; }
 
 export default function Home() {
@@ -243,6 +243,55 @@ export default function Home() {
     }
   };
 
+  // 快捷提问
+  const quickAsk = (q: string) => {
+    if (!selectedScript || !conversationId) return;
+    setInput(q);
+    // 用 setTimeout 让 input 更新后再发送
+    setTimeout(() => {
+      const fakeEvent = { key: "Enter", shiftKey: false, preventDefault: () => {} } as any;
+      // 直接调用 send 逻辑
+      const msg = q.trim();
+      if (!msg || isLoading || !selectedScript || !conversationId) return;
+      setError(""); setInput("");
+      setMessages(p => [...p, { role: "user", content: msg }, { role: "assistant", content: "" }]);
+      setIsLoading(true);
+      fetch("/api/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scriptId: selectedScript.id, conversationId, message: msg, characterName: characterName || undefined }),
+      }).then(async (r) => {
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({ error: "请求失败" }));
+          setMessages(p => { const u = [...p]; u[u.length-1] = { ...u[u.length-1], content: `❌ ${d.error}` }; return u; });
+          setIsLoading(false); return;
+        }
+        const reader = r.body?.getReader();
+        if (!reader) { setIsLoading(false); return; }
+        const dec = new TextDecoder(); let buf = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const lines = buf.split("\n"); buf = lines.pop() || "";
+          for (const line of lines) {
+            const t = line.trim(); if (!t.startsWith("data: ")) continue;
+            const d2 = t.slice(6);
+            if (d2 === "[DONE]") { setIsLoading(false); continue; }
+            try {
+              const p = JSON.parse(d2);
+              if (p.error) { setMessages(prev => { const u = [...prev]; u[u.length-1] = { ...u[u.length-1], content: (u[u.length-1].content||"") + `\n❌ ${p.error}` }; return u; }); setIsLoading(false); }
+              if (p.content) { setMessages(prev => { const u = [...prev]; u[u.length-1] = { ...u[u.length-1], content: u[u.length-1].content + p.content }; return u; }); }
+            } catch {}
+          }
+        }
+        setIsLoading(false);
+      }).catch((e: any) => {
+        setMessages(p => { const u = [...p]; u[u.length-1] = { ...u[u.length-1], content: `❌ 发送失败: ${e.message||"网络错误"}` }; return u; });
+        setIsLoading(false);
+      });
+    }, 50);
+  };
+
   const filteredScripts = scriptSearch ? scripts.filter(s => (s.name||"").toLowerCase().includes(scriptSearch.toLowerCase())) : scripts;
   const genres = [...new Set(scripts.map((s: any) => s.genre).filter(Boolean))];
 
@@ -354,28 +403,69 @@ export default function Home() {
       <main className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {!user && <div className="max-w-md mx-auto mt-20 bg-white rounded-xl shadow p-6"><h2 className="text-xl font-bold text-center mb-6">登录</h2><LoginForm onLogin={(u: any) => { setUser(u); localStorage.setItem("user", JSON.stringify(u)); }} /></div>}
 
-        {/* 当前剧本标签 */}
+        {/* 剧本概览卡片 */}
         {user && selectedScript && (
-          <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-100 rounded-lg text-sm">
-            <span className="font-medium text-blue-800">{selectedScript.name}</span>
-            {(selectedScript as any).genre && <span className="bg-white px-2 py-0.5 rounded text-xs text-gray-600">{(selectedScript as any).genre}</span>}
-            {(selectedScript as any).player_count && <span className="bg-white px-2 py-0.5 rounded text-xs text-gray-600">{(selectedScript as any).player_count}人</span>}
-            {(selectedScript as any).difficulty && <span className="bg-white px-2 py-0.5 rounded text-xs text-gray-600">难度:{(selectedScript as any).difficulty}</span>}
-            {(selectedScript as any).is_sensitive && <span className="px-2 py-0.5 bg-red-100 text-red-600 rounded text-xs">敏感本</span>}
+          <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm space-y-3">
+            {/* 标题行 */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-bold text-gray-800">{selectedScript.name}</h2>
+              {selectedScript.is_sensitive && <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs font-medium">敏感本</span>}
+            </div>
+
+            {/* 属性标签 */}
+            <div className="flex flex-wrap gap-1.5">
+              {selectedScript.genre && <span className="inline-flex px-2 py-0.5 bg-purple-50 text-purple-700 rounded text-xs font-medium">{selectedScript.genre}</span>}
+              {selectedScript.player_count && <span className="inline-flex px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium">{selectedScript.player_count}人</span>}
+              {selectedScript.act_count ? <span className="inline-flex px-2 py-0.5 bg-green-50 text-green-700 rounded text-xs font-medium">{selectedScript.act_count}幕</span> : null}
+              {selectedScript.difficulty && <span className="inline-flex px-2 py-0.5 bg-orange-50 text-orange-700 rounded text-xs font-medium">{selectedScript.difficulty}</span>}
+              {selectedScript.duration && <span className="inline-flex px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">{selectedScript.duration}</span>}
+            </div>
+
+            {/* 敏感说明 */}
+            {selectedScript.is_sensitive && selectedScript.sensitivity_note && (
+              <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-1.5">{selectedScript.sensitivity_note}</div>
+            )}
+
+            {/* 角色列表 + 过滤 */}
             {characterList.length > 0 && (
-              <select
-                value={characterName}
-                onChange={e => setCharacterName(e.target.value)}
-                className="ml-2 px-2 py-0.5 text-xs border rounded bg-white"
-                title="按角色过滤上下文"
-              >
-                <option value="">全部角色</option>
-                {characterList.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 shrink-0">角色:</span>
+                <div className="flex flex-wrap gap-1">
+                  {characterList.map(c => (
+                    <button key={c}
+                      onClick={() => setCharacterName(characterName === c ? "" : c)}
+                      className={`px-2 py-0.5 text-xs rounded-full transition-colors ${
+                        characterName === c
+                          ? "bg-purple-600 text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >{c}</button>
+                  ))}
+                </div>
+                {characterName && (
+                  <span className="text-xs text-purple-600 ml-1">仅看{characterName}视角</span>
+                )}
+              </div>
             )}
-            {characterName && (
-              <span className="text-xs text-purple-600">仅看{characterName}视角</span>
-            )}
+
+            {/* 快捷提问 */}
+            <div className="flex flex-wrap gap-1.5 pt-1 border-t border-gray-100">
+              <span className="text-xs text-gray-400 shrink-0 self-center mr-1">快捷提问:</span>
+              {[
+                "凶手是谁？",
+                "关键线索有哪些？",
+                "DM开场白怎么讲？",
+                "梳理时间线",
+                "角色关系是怎样的？",
+                "动机分析",
+              ].map(q => (
+                <button key={q}
+                  onClick={() => quickAsk(q)}
+                  disabled={isLoading || !conversationId}
+                  className="px-2.5 py-1 text-xs bg-gray-50 border border-gray-200 rounded-full hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >{q}</button>
+              ))}
+            </div>
           </div>
         )}
 

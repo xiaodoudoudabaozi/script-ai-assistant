@@ -14,18 +14,22 @@ export async function GET(request: NextRequest) {
   try {
     // 从数据库查询所有剧本
     const result = await pool.query(
-      `SELECT id, name, genre, player_count, difficulty, is_sensitive 
-       FROM scripts 
+      `SELECT id, name, author, genre, player_count, act_count, difficulty, duration, is_sensitive, sensitivity_note
+       FROM scripts
        ORDER BY name ASC`
     );
 
     const scripts = result.rows.map(row => ({
       id: row.id,
       name: row.name,
+      author: row.author || undefined,
       genre: row.genre || undefined,
       player_count: row.player_count || undefined,
+      act_count: row.act_count || undefined,
       difficulty: row.difficulty || undefined,
+      duration: row.duration || undefined,
       is_sensitive: row.is_sensitive || false,
+      sensitivity_note: row.sensitivity_note || undefined,
     }));
 
     return NextResponse.json({ scripts });
