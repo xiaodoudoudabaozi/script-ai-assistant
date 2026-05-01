@@ -14,6 +14,8 @@ export function PwaProvider() {
         .register("/sw.js")
         .then((reg) => {
           console.log("[PWA] SW 已注册:", reg.scope);
+          // 每次加载强制检查更新
+          reg.update().catch(() => {});
 
           // 检测到新版本时自动更新
           reg.addEventListener("updatefound", () => {
