@@ -170,7 +170,10 @@ export default function Home() {
     setHistoryLoading(false);
 
     // 异步加载角色列表
-    fetch(`/api/scripts/files?scriptId=${s.id}`).then(r => r.json()).then(d => {
+    fetch(`/api/scripts/files?scriptId=${s.id}`).then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    }).then(d => {
       const seen = new Set<string>();
       const chars: string[] = [];
       for (const f of (d.files || [])) {
@@ -180,7 +183,7 @@ export default function Home() {
         }
       }
       setCharacterList(chars);
-    }).catch(() => {});
+    }).catch(err => { console.warn("[角色列表] 加载失败:", err.message); });
   };
 
   // 新建对话
